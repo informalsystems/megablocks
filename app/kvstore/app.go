@@ -60,12 +60,16 @@ func (app *KVStoreApplication) InitChain(_ context.Context, chain *abcitypes.Req
 	return &abcitypes.ResponseInitChain{}, nil
 }
 
+// PrepareProposal allows application to reorder,add or remove transactions from the group.
+// Here we're returning the unmodified group of transactions
 func (app *KVStoreApplication) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
-	return &abcitypes.ResponsePrepareProposal{}, nil
+	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
 }
 
+// ProcessProposal is used to ask the application to accept the proposal before voting to accept the proposal by the node.
+// Here we're simply accept all proposals
 func (app *KVStoreApplication) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
-	return &abcitypes.ResponseProcessProposal{}, nil
+	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
 }
 
 // FinalizeBlock will add the key and value to the Badger transaction every time
