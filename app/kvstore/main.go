@@ -9,51 +9,23 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/privval"
-	"github.com/cometbft/cometbft/proxy"
-
-	cfg "github.com/cometbft/cometbft/config"
-	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
+	abciserver "github.com/cometbft/cometbft/abci/server"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
-	nm "github.com/cometbft/cometbft/node"
 	"github.com/dgraph-io/badger/v3"
-	"github.com/spf13/viper"
 )
 
 var homeDir string
+var socketAddr string
 
 func init() {
-	flag.StringVar(&homeDir, "cmt-home", "", "Path to the CometBFT config directory (if empty, uses $HOME/.cometbft)")
-}
-
-// load config form specified directory
-func configure(cfgDir string) (*cfg.Config, error) {
-	config := cfg.DefaultConfig()
-	config.SetRoot(cfgDir)
-	viper.SetConfigFile(fmt.Sprintf("%s/%s", cfgDir, "config/config.toml"))
-
-	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("Reading config: %v", err)
-	}
-	if err := viper.Unmarshal(config); err != nil {
-		return nil, fmt.Errorf("Decoding config: %v", err)
-	}
-	if err := config.ValidateBasic(); err != nil {
-		return nil, fmt.Errorf("Invalid configuration data: %v", err)
-	}
-	return config, nil
+	flag.StringVar(&homeDir, "kv-home", "", "Path to the kvstore directory (if empty, uses $HOME/.kvstore)")
+	flag.StringVar(&socketAddr, "socket-addr", "unix://example.sock", "Unix domain socket address (if empty, uses \"unix://example.sock\"")
 }
 
 func main() {
 	flag.Parse()
 	if homeDir == "" {
 		homeDir = os.ExpandEnv("$HOME/.cometbft")
-	}
-
-	config, err := configure(homeDir)
-	if err != nil {
-		log.Fatalf("Failed getting configuration: %v", err)
 	}
 
 	// initialize badger
@@ -71,43 +43,17 @@ func main() {
 
 	app := NewKVStoreApplication(db)
 
-	pv := privval.LoadFilePV(
-		config.PrivValidatorKeyFile(),
-		config.PrivValidatorStateFile(),
-	)
-
-	nodeKey, err := p2p.LoadNodeKey(config.NodeKeyFile())
-	if err != nil {
-		log.Fatalf("failed to load node's key: %v", err)
-	}
-
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
-	logger, err = cmtflags.ParseLogLevel(config.LogLevel, logger, cfg.DefaultLogLevel)
 
-	if err != nil {
-		log.Fatalf("failed to parse log level: %v", err)
+	server := abciserver.NewSocketServer(socketAddr, app)
+	server.SetLogger(logger)
+
+	if err := server.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "error starting socket server: %v", err)
+
+		os.Exit(1)
 	}
-
-	node, err := nm.NewNode(
-		config,
-		pv,
-		nodeKey,
-		proxy.NewLocalClientCreator(app),
-		nm.DefaultGenesisDocProviderFunc(config),
-		cfg.DefaultDBProvider, //fixed
-		nm.DefaultMetricsProvider(config.Instrumentation),
-		logger,
-	)
-
-	if err != nil {
-		log.Fatalf("Creating node: %v", err)
-	}
-
-	node.Start()
-	defer func() {
-		node.Stop()
-		node.Wait()
-	}()
+	defer server.Stop()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
