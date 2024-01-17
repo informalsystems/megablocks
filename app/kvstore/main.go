@@ -1,5 +1,11 @@
 package main
 
+//
+// Example application for MegaBlocks implementing a KV store following the user guide
+// of CometBFT (https://docs.cometbft.com/v0.38/guides/go) for applications running as
+// separate process from CometBFT
+//
+
 import (
 	"flag"
 	"fmt"

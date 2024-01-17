@@ -1,5 +1,10 @@
 package main
 
+//
+// KVStoreApplication implementing the ABCI interface as described in the user guide
+// of CometBFT v0.38
+//
+
 import (
 	"bytes"
 	"context"
