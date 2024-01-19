@@ -81,7 +81,7 @@ func (app *KVStoreApplication) ProcessProposal(_ context.Context, proposal *abci
 // our application processes a new application transaction from the list received through
 // RequestFinalizeBlock
 func (app *KVStoreApplication) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
-	var txs = make([]*abcitypes.ExecTxResult, len(req.Txs))
+	txs := make([]*abcitypes.ExecTxResult, len(req.Txs))
 
 	app.onGoingBlock = app.db.NewTransaction(true)
 	for i, tx := range req.Txs {

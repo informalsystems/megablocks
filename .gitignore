@@ -8,6 +8,7 @@ app/kvstore/kvstore
 *.dll
 *.so
 *.dylib
+.DS_Store
 
 # Test binary, built with `go test -c`
 *.test
@@ -21,3 +22,6 @@ app/kvstore/kvstore
 # Go workspace file
 go.work
 go.work.sum
+
+# Some VSCode files
+launch.json

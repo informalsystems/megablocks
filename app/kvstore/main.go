@@ -20,12 +20,20 @@ import (
 	"github.com/dgraph-io/badger/v3"
 )
 
-var homeDir string
-var socketAddr string
+var (
+	homeDir    string
+	socketAddr string
+)
 
 func init() {
 	flag.StringVar(&homeDir, "kv-home", "", "Path to the kvstore directory (if empty, uses $HOME/.kvstore)")
 	flag.StringVar(&socketAddr, "socket-addr", "unix://example.sock", "Unix domain socket address (if empty, uses \"unix://example.sock\"")
+}
+
+func closeDB(db *badger.DB) {
+	if err := db.Close(); err != nil {
+		log.Printf("Closing database: %v", err)
+	}
 }
 
 func main() {
@@ -37,15 +45,10 @@ func main() {
 	// initialize badger
 	dbPath := filepath.Join(homeDir, "badger")
 	db, err := badger.Open(badger.DefaultOptions(dbPath))
-
 	if err != nil {
 		log.Fatalf("Opening database: %v", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("Closing database: %v", err)
-		}
-	}()
+	defer closeDB(db)
 
 	app := NewKVStoreApplication(db)
 
@@ -56,7 +59,8 @@ func main() {
 
 	if err := server.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error starting socket server: %v", err)
-
+		closeDB(db)
+		//nolint  // ignore exitAfterDefer as closeDB called explicitly
 		os.Exit(1)
 	}
 	defer server.Stop()
