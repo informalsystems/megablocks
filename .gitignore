@@ -20,3 +20,4 @@ app/kvstore/kvstore
 
 # Go workspace file
 go.work
+go.work.sum
