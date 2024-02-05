@@ -17,7 +17,7 @@ import (
 
 	abciserver "github.com/cometbft/cometbft/abci/server"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 )
 
 var (

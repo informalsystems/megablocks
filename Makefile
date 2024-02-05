@@ -9,5 +9,5 @@ $(SUBDIRS):
 
 test-e2e:
 	go clean -testcache
-	go test -v ./tests/e2e/e2e_test.go
+	go test -v ./tests/e2e/...
 .PHONY: test-e2e
