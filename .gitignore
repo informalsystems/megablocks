@@ -2,11 +2,13 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Binaries for programs and plugins
+app/kvstore/kvstore
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+.DS_Store
 
 # Test binary, built with `go test -c`
 *.test
@@ -19,3 +21,7 @@
 
 # Go workspace file
 go.work
+go.work.sum
+
+# Some VSCode files
+launch.json
