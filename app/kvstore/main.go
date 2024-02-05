@@ -50,9 +50,8 @@ func main() {
 	}
 	defer closeDB(db)
 
-	app := NewKVStoreApplication(db)
-
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
+	app := NewKVStoreApplication(db, logger)
 
 	server := abciserver.NewSocketServer(socketAddr, app)
 	server.SetLogger(logger)

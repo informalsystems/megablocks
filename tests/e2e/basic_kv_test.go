@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"testing"
 )
@@ -29,10 +30,11 @@ func sendKVtransaction(key, value string) error {
 	query := fmt.Sprintf(`%s:%d/broadcast_tx_commit?tx="%s=%s"`,
 		HOST, CometGrpcPort, key, value)
 
-	cmd := exec.Command("curl", "-s", query)
+	cmd := exec.Command("curl", query)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("error sending query to kv store: %v, %s", err, string(out))
+		log.Println("Command failed: ", cmd)
+		return fmt.Errorf("error sending query to kv store: %v, '%s'", err, string(out))
 	}
 	return err
 }
@@ -112,4 +114,40 @@ func TestBasicKVwithCometBFT(t *testing.T) {
 		t.Errorf("Unexpected result for value: Expected %s, Got: %s", value, result)
 		return
 	}
+}
+
+func TestBasicKVwithCosMux(t *testing.T) {
+	// start applications
+	kvStore, err := startKVStore()
+	if err != nil {
+		t.Errorf("error starting apps: %v", err)
+		return
+	}
+	defer stopApplications([]*exec.Cmd{kvStore})
+
+	// start multiplexer
+	cosmux, err := startCosMux()
+	if err != nil {
+		err = fmt.Errorf("failed starting cometBFT: %v", err)
+	}
+	defer terminateCosMux(cosmux)
+
+	// Set an entry in the KVStore
+	key := "cosmux"
+	value := "muxTestEntry"
+	err = sendKVtransaction(key, value)
+	if err != nil {
+		t.Errorf("Send transaction failed: %v", err)
+		return
+	}
+
+	// Check transaction was successful
+	result, err := queryKVStore(key)
+
+	if result != value {
+		t.Errorf("Unexpected result for value: Expected %s, Got: %s", value, result)
+		return
+	}
+	t.Log("resulting value is:", result)
+
 }

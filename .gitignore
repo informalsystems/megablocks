@@ -3,6 +3,7 @@
 #
 # Binaries for programs and plugins
 app/kvstore/kvstore
+cosmux/cosmux
 *.exe
 *.exe~
 *.dll

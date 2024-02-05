@@ -63,7 +63,7 @@ func startCometBFT() (*exec.Cmd, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command("go", "run", CometURL, "node", "--home", CometHome, "--rpc.laddr", CometGrpcURL, "--proxy_app", "unix://example.sock")
+	cmd := exec.Command("go", "run", CometURL, "node", "--home", CometHome, "--rpc.laddr", CometGrpcURL, "--proxy_app", KVSocket)
 	cmd.Stdout = logFile
 	// request to create process group to terminate created childrens as well
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

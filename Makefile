@@ -1,4 +1,4 @@
-SUBDIRS := $(wildcard ./app/*/.)
+SUBDIRS := $(wildcard ./app/*/. ./cosmux/.)
 
 # builds all applications in ./app
 build: $(SUBDIRS)
