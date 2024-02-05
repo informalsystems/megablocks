@@ -12,6 +12,18 @@ var (
 	HOST string = "localhost"
 )
 
+type kvEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type RpcResult struct {
+	Response kvEntry `json: "response"`
+}
+type RpcResponse struct {
+	Result RpcResult `json: "result"`
+}
+
 // Set a key/value on the store
 func sendKVtransaction(key, value string) error {
 	query := fmt.Sprintf(`%s:%d/broadcast_tx_commit?tx="%s=%s"`,
@@ -34,11 +46,13 @@ func queryKVStore(key string) (string, error) {
 		return "", fmt.Errorf("error checking transaction: %v, %s", err, string(out))
 	}
 
-	var result map[string]interface{}
-	json.Unmarshal(out, &result)
-	response := result["result"].(map[string]interface{})["response"].(map[string]interface{})
-	resultKey := response["key"].(string)
-	resultValue := response["value"].(string)
+	response := RpcResponse{}
+	err = json.Unmarshal(out, &response)
+	if err != nil {
+		fmt.Printf(" error ###: %+v", err)
+	}
+	resultKey := response.Result.Response.Key
+	resultValue := response.Result.Response.Value
 
 	// Key and value in response are base64 encoded.
 	// decode key
