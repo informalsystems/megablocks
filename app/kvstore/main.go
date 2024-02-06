@@ -17,7 +17,7 @@ import (
 
 	abciserver "github.com/cometbft/cometbft/abci/server"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 )
 
 var (
@@ -39,7 +39,7 @@ func closeDB(db *badger.DB) {
 func main() {
 	flag.Parse()
 	if homeDir == "" {
-		homeDir = os.ExpandEnv("$HOME/.cometbft")
+		homeDir = os.ExpandEnv("$HOME/.kvstore")
 	}
 
 	// initialize badger

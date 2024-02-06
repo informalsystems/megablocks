@@ -11,7 +11,7 @@ import (
 	"log"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 )
 
 type KVStoreApplication struct {
