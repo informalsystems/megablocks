@@ -39,7 +39,7 @@ func closeDB(db *badger.DB) {
 func main() {
 	flag.Parse()
 	if homeDir == "" {
-		homeDir = os.ExpandEnv("$HOME/.cometbft")
+		homeDir = os.ExpandEnv("$HOME/.kvstore")
 	}
 
 	// initialize badger

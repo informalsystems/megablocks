@@ -49,7 +49,7 @@ func queryKVStore(key string) (string, error) {
 	response := RpcResponse{}
 	err = json.Unmarshal(out, &response)
 	if err != nil {
-		fmt.Printf(" error ###: %+v", err)
+		panic(fmt.Sprintf("error unmarshalling query response %+v", err))
 	}
 	resultKey := response.Result.Response.Key
 	resultValue := response.Result.Response.Value

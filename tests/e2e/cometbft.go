@@ -91,7 +91,7 @@ func terminateCometBFT(cmd *exec.Cmd) error {
 	fmt.Println("Terminating CometBFT")
 	// CometBFT is started as process group so we need to send the signal
 	// to each process in the group  (prefix  `-`)
-	if rc := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); rc != nil {
+	if rc := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); rc != nil {
 		log.Println("error terminating cometBFT ", rc)
 		return rc
 	}
