@@ -16,6 +16,7 @@ import (
 	"syscall"
 
 	abciserver "github.com/cometbft/cometbft/abci/server"
+	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
 	cmtlog "github.com/cometbft/cometbft/libs/log"
 	"github.com/dgraph-io/badger/v4"
 )
@@ -23,6 +24,7 @@ import (
 var (
 	homeDir    string
 	socketAddr string
+	verbose    bool
 )
 
 func init() {
@@ -38,6 +40,12 @@ func closeDB(db *badger.DB) {
 
 func main() {
 	flag.Parse()
+
+	logLevel := "info"
+	if verbose {
+		logLevel = "*:debug"
+	}
+
 	if homeDir == "" {
 		homeDir = os.ExpandEnv("$HOME/.kvstore")
 	}
@@ -51,6 +59,11 @@ func main() {
 	defer closeDB(db)
 
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
+	logger, err = cmtflags.ParseLogLevel(logLevel, logger, "*:info")
+	if err != nil {
+		log.Fatalf("failed to parse log level: %v", err)
+	}
+
 	app := NewKVStoreApplication(db, logger)
 
 	server := abciserver.NewSocketServer(socketAddr, app)

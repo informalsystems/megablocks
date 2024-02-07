@@ -22,6 +22,14 @@ var (
 
 func initCometBFT(cometHome string) error {
 	fmt.Println("Initializing CometBFT")
+	_, err := os.Stat(CometHome)
+	if err == nil {
+		fmt.Println("Deleting existing comet home :", CometHome)
+		err = os.RemoveAll(CometHome)
+		if err != nil {
+			return fmt.Errorf("error initializing cometBFT: %s", err.Error())
+		}
+	}
 	cmd := exec.Command("go", "run", CometURL, "init", "--home", cometHome)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

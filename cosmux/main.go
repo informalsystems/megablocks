@@ -18,10 +18,32 @@ import (
 	"github.com/spf13/viper"
 )
 
-var homeDir string
+var (
+	homeDir string
+	verbose bool
+)
+
+type MegaBlockApp struct {
+	ID             uint8 // app identifier used to route tx
+	Address        string
+	ConnectionType string
+	Name           string
+}
+
+// ChainApps is a list of applications handled by Multiplexer
+// TODO: get this from a config file
+var ChainApps []MegaBlockApp = []MegaBlockApp{
+	{
+		ID:             1,
+		Address:        "unix:///tmp/kvapp.sock",
+		ConnectionType: "socket",
+		Name:           "KVStore",
+	},
+}
 
 func init() {
 	flag.StringVar(&homeDir, "cmt-home", "", "Path to the CometBFT config directory (if empty, uses $HOME/.cometbft)")
+	flag.BoolVar(&verbose, "v", false, "verbose")
 }
 
 // configureCometBFT creates default config in specified cometBFT home directory
@@ -51,15 +73,21 @@ func main() {
 	}
 	config := configureCometBFT(homeDir)
 
+	// override loglevel config if requested
+	if verbose {
+		fmt.Println("overriding logleve ", verbose)
+		config.LogLevel = "debug"
+	}
+
 	// Create Multiplexer Shim
 	muxCfg := CosmuxConfig{LogLevel: config.LogLevel}
 	cosmux := NewMultiplexer(muxCfg)
 
-	// Register chain application
-	addr := "unix:///tmp/kvapp.sock"
-	conType := "socket"
-	if err := cosmux.AddApplication(addr, conType); err != nil {
-		log.Fatalf("error registering chain application: %v", err)
+	// Register applications
+	for _, app := range ChainApps {
+		if err := cosmux.AddApplication(app); err != nil {
+			log.Fatalf("error registering chain application: %v", err)
+		}
 	}
 
 	if err := cosmux.Start(); err != nil {
@@ -84,7 +112,6 @@ func main() {
 		log.Fatalf("failed to parse log level: %v", err)
 	}
 
-	// clientCreator := proxy.NewLocalClientCreator(cosmux)
 	clientCreator := proxy.NewConnSyncLocalClientCreator(cosmux)
 	node, err := node.NewNode(
 		config,

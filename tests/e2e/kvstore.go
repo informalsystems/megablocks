@@ -19,6 +19,7 @@ func startKVStore() (*exec.Cmd, error) {
 	}
 	cmd := exec.Command("../../app/kvstore/kvstore",
 		"-kv-home", kvHome,
+		"-v=3",
 		"-socket-addr", KVSocket)
 	cmd.Stdout = logFile
 	err = cmd.Start()

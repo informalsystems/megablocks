@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 )
+
+func Client(ip, proxyPort string) (*rpchttp.HTTP, error) {
+	return rpchttp.New(fmt.Sprintf("http://%s:%v", ip, proxyPort), "/websocket")
+}
 
 // startApplications starts all chain applications
 // returns list of cmd pointers chain app processes

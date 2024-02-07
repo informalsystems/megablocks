@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 
 	abcitypes "github.com/cometbft/cometbft/abci/types"
@@ -61,26 +62,26 @@ func (app *KVStoreApplication) Query(_ context.Context, req *abcitypes.RequestQu
 
 func (app *KVStoreApplication) CheckTx(_ context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
 	code := app.isValid(check.Tx)
-	app.log.Info("@@@@ Check TX called :", check.String())
+	app.log.Info("Check TX called :", check.String())
 	return &abcitypes.ResponseCheckTx{Code: code}, nil
 }
 
 func (app *KVStoreApplication) InitChain(_ context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
-	app.log.Info("@@@@ InitChain called :", chain.String())
+	app.log.Info("InitChain called :", chain.String())
 	return &abcitypes.ResponseInitChain{}, nil
 }
 
 // PrepareProposal allows application to reorder,add or remove transactions from the group.
 // Here we're returning the unmodified group of transactions
 func (app *KVStoreApplication) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
-	app.log.Info("@@@@ PrepareProposal called :", proposal.String())
+	app.log.Info("PrepareProposal called :", proposal.String())
 	return &abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}, nil
 }
 
 // ProcessProposal is used to ask the application to accept the proposal before voting to accept the proposal by the node.
 // Here we're simply accept all proposals
 func (app *KVStoreApplication) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
-	app.log.Info("@@@@ ProcessProposal called :", proposal.String())
+	app.log.Info("ProcessProposal called :", proposal.String())
 	return &abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}, nil
 }
 
@@ -88,7 +89,7 @@ func (app *KVStoreApplication) ProcessProposal(_ context.Context, proposal *abci
 // our application processes a new application transaction from the list received through
 // RequestFinalizeBlock
 func (app *KVStoreApplication) FinalizeBlock(_ context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
-	app.log.Info("@@@@ FinalizedBlock called :", req.String())
+	app.log.Info("FinalizedBlock called :", req.String())
 	txs := make([]*abcitypes.ExecTxResult, len(req.Txs))
 	app.onGoingBlock = app.db.NewTransaction(true)
 	for i, tx := range req.Txs {
@@ -118,37 +119,40 @@ func (app *KVStoreApplication) FinalizeBlock(_ context.Context, req *abcitypes.R
 
 func (app KVStoreApplication) Commit(_ context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
 	// terminate badger transaction and make resulting state persistent
-	app.log.Info("@@@@ Commit called")
+	app.log.Info("Commit called")
+	if app.onGoingBlock == nil {
+		return nil, fmt.Errorf("application error: no ongoing block from badger")
+	}
 	return &abcitypes.ResponseCommit{}, app.onGoingBlock.Commit()
 }
 
 func (app *KVStoreApplication) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
-	app.log.Info("@@@ ListSnapshots called: ", snapshots.String())
+	app.log.Info("ListSnapshots called: ", snapshots.String())
 	return &abcitypes.ResponseListSnapshots{}, nil
 }
 
 func (app *KVStoreApplication) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
-	app.log.Info("@@@ OfferSnapshots called: ", snapshot.String())
+	app.log.Info("OfferSnapshots called: ", snapshot.String())
 	return &abcitypes.ResponseOfferSnapshot{}, nil
 }
 
 func (app *KVStoreApplication) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
-	app.log.Info("@@@ LoadSnapshots called: ", chunk.String())
+	app.log.Info("LoadSnapshots called: ", chunk.String())
 	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
 }
 
 func (app *KVStoreApplication) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
-	app.log.Info("@@@ ApplySnapshots called: ", chunk.String())
+	app.log.Info("ApplySnapshots called: ", chunk.String())
 	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
 }
 
 func (app KVStoreApplication) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
-	app.log.Info("@@@ ExtendVote called: ", extend.String())
+	app.log.Info("ExtendVote called: ", extend.String())
 	return &abcitypes.ResponseExtendVote{}, nil
 }
 
 func (app *KVStoreApplication) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
-	app.log.Info("@@@ VerifyVoteExtension called: ", verify.String())
+	app.log.Info("VerifyVoteExtension called: ", verify.String())
 	return &abcitypes.ResponseVerifyVoteExtension{}, nil
 }
 

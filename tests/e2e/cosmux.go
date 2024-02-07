@@ -21,7 +21,7 @@ func startCosMux() (*exec.Cmd, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command("../../cosmux/cosmux", "--cmt-home", CometHome)
+	cmd := exec.Command("../../cosmux/cosmux", "-v", "--cmt-home", CometHome)
 	cmd.Stdout = logFile
 	// request to create process group to terminate created childrens as well
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

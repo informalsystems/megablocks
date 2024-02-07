@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -14,21 +15,27 @@ import (
 	"github.com/cometbft/cometbft/proxy"
 )
 
+// MAGIC used in the header of each valid Megablocks transaction
+var (
+	MAGIC           = [...]byte{0x23, 0x6d, 0x75, 0x78}
+	MbHeaderLen int = len(MAGIC) + 1 // MAGIC + AppID (1byte)
+)
+
 // CometMux is an ABCI++ block multiplexer
 type CometMux struct {
 	log     cmtlog.Logger
-	clients map[string]*AbciHandler
+	clients map[uint]*AbciHandler
 }
 
 type AbciHandler struct {
-	ID     string
+	ID     uint8 // unique application identifier
 	client abcicli.Client
 }
 
 // Connect creates the client and connects to the chain application
 func (hdl *AbciHandler) Connect() error {
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout)).With("module",
-		fmt.Sprintf("app-%s", hdl.ID))
+		fmt.Sprintf("app-%d", hdl.ID))
 	hdl.client.SetLogger(logger)
 
 	// Start client
@@ -38,7 +45,7 @@ func (hdl *AbciHandler) Connect() error {
 	}
 
 	if err := hdl.client.Start(); err != nil {
-		return fmt.Errorf("error starting client %s: %v", hdl.ID, err.Error())
+		return fmt.Errorf("error starting client %d: %v", hdl.ID, err.Error())
 	}
 
 	logger.Info("Connected")
@@ -60,42 +67,60 @@ func NewMultiplexer(config CosmuxConfig) *CometMux {
 	}
 	m := CometMux{
 		log:     logger,
-		clients: map[string]*AbciHandler{},
+		clients: map[uint]*AbciHandler{},
 	}
 	return &m
 }
 
 // AddApplication adds a chain application to the multiplexer
-func (app *CometMux) AddApplication(addr, transport string) error {
-	id := addr + transport
-	_, exists := app.clients[id]
+func (mux *CometMux) AddApplication(app MegaBlockApp) error {
+	_, exists := mux.clients[uint(app.ID)]
 	if exists {
-		log.Fatal("handler exists already with ID", id)
+		log.Fatal("handler exists already with ID", app.ID)
 	}
-	client, err := proxy.NewRemoteClientCreator(addr, transport, true).NewABCIClient()
+	client, err := proxy.NewRemoteClientCreator(app.Address, app.ConnectionType, true).NewABCIClient()
 	if err != nil {
 		return err
 	}
-	app.clients[id] = &AbciHandler{
-		ID:     id,
+	mux.clients[uint(app.ID)] = &AbciHandler{
+		ID:     app.ID,
 		client: client,
 	}
 	return nil
 }
 
 // Start connects to all registered applications
-func (app *CometMux) Start() error {
-	for _, client := range app.clients {
+func (mux *CometMux) Start() error {
+	for _, client := range mux.clients {
 		if err := client.Connect(); err != nil {
-			return fmt.Errorf("error connecting to chain app %s: %v", client.ID, err)
+			return fmt.Errorf("error connecting to chain app %d: %v", client.ID, err)
 		}
 	}
 	return nil
 }
 
-func (app *CometMux) getHandler() *AbciHandler {
-	for idx := range app.clients {
-		return app.clients[idx]
+func (mux *CometMux) getHandler(header []byte) (*AbciHandler, error) {
+	if err := CheckHeader(header); err != nil {
+		mux.log.Error(err.Error())
+		return nil, err
+	}
+	id := uint(header[MbHeaderLen-1])
+	if _, exists := mux.clients[id]; !exists {
+		// Header references invalid application which should never happen
+		return nil, fmt.Errorf("no application handler found in megablocks header: len=%d, %v",
+			len(header), header)
+	}
+	return mux.clients[id], nil
+}
+
+// CheckHeader verifies if the tx contains a valid Megablocks header
+func CheckHeader(tx []byte) error {
+	if len(tx) < MbHeaderLen {
+		return fmt.Errorf("invalid tx header length: %d", len(tx))
+	}
+	// check Magic
+	if !bytes.Equal(tx[:MbHeaderLen-1], MAGIC[:]) {
+		return fmt.Errorf("invalid Megablocks tx header: %v", tx[:MbHeaderLen-1])
 	}
 	return nil
 }
@@ -104,82 +129,74 @@ func (app *CometMux) getHandler() *AbciHandler {
 // ABCI++ Implementation of CometMux follows here
 //
 
-func (app *CometMux) Info(ctx context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
-	app.log.Info("@@@ Info called: ", info)
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to Info failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
-	}
-	cl := hdlr.client
-	response, err := cl.Info(ctx, info)
-	if err != nil {
-		app.log.Error("error forwarding Info: ", err)
-		return nil, err
-	}
-	return response, nil
+// Info calls are not forwarded to chain apps
+func (mux *CometMux) Info(ctx context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
+	mux.log.Debug("Info called: ", info)
+	return &abcitypes.ResponseInfo{}, nil
 }
 
-func (app *CometMux) Query(ctx context.Context, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
-	app.log.Info("@@@ Query called: ", req.String())
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to Query failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
+// Query relays a query to the corresponding application
+func (mux *CometMux) Query(ctx context.Context, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
+	mux.log.Debug("Query called: ", req.String())
+
+	// TODO : to be defined how to identify the target application on queries
+	// use hardcoded handler for now
+	hdlr, err := mux.getHandler(req.Data[:MbHeaderLen])
+	if err != nil {
+		mux.log.Error("call to Query failed: no handler found to forward call: %v", err)
+		return nil, fmt.Errorf("query failed: %v", err)
 	}
+
+	// Strip Megablocks header
+	req.Data = req.Data[MbHeaderLen:]
 	cl := hdlr.client
 	response, err := cl.Query(ctx, req)
 	if err != nil {
-		app.log.Error("error forwarding Query: ", err)
+		mux.log.Error("error forwarding Query: ", err)
 		return nil, err
 	}
 	return response, err
 }
 
-func (app *CometMux) CheckTx(ctx context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
-	app.log.Info("@@@ CheckTx called: ", check)
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to CheckTx failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
+// CheckTx will identify the target app based on the megablocks header and forward it to the app
+func (mux *CometMux) CheckTx(ctx context.Context, check *abcitypes.RequestCheckTx) (*abcitypes.ResponseCheckTx, error) {
+	mux.log.Info("CheckTx called: ", check)
+	hdlr, err := mux.getHandler(check.Tx[:MbHeaderLen])
+	if err != nil {
+		mux.log.Error("call to CheckTx failed: %v", err)
+		return nil, fmt.Errorf("CheckTx failed: %s", err.Error())
 	}
+
+	// Strip MB header
+	check.Tx = check.Tx[MbHeaderLen:]
 	cl := hdlr.client
 	response, err := cl.CheckTx(ctx, check)
 	if err != nil {
-		app.log.Error("error forwarding CheckTx: ", err)
+		mux.log.Error("error forwarding CheckTx: ", err)
 		return nil, err
 	}
 	return response, err
 }
 
-func (app *CometMux) InitChain(ctx context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
-	app.log.Info("@@@ InitChain called: ", chain.String())
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to InitChain failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
-	}
-	cl := hdlr.client
-	response, err := cl.InitChain(ctx, chain)
-	if err != nil {
-		app.log.Error("error forwarding InitChain: ", err)
-		return nil, err
-	}
-	return response, err
+// InitChain
+func (mux *CometMux) InitChain(ctx context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
+	mux.log.Debug("InitChain called: ", chain.String())
+	// TODO: dispatching logic to be decided as this one contains validator set. for now it's a noop
+	return &abcitypes.ResponseInitChain{}, nil
 }
 
-func (app *CometMux) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
+func (mux *CometMux) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
 	// TODO: to be decided if app should get the possibility to regroup this
 	response := abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}
-	app.log.Info("@@@@ PrepareProposal called #Txs: ", len(response.Txs))
+	mux.log.Debug("PrepareProposal called #Txs: ", len(response.Txs))
 	return &response, nil
 }
 
 // ProcessProposal allows applications to check if proposed block is valid
-func (app *CometMux) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
+func (mux *CometMux) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
 	// TODO: to be decided if app should get the ability to check that and outcome of 'Atomic IBC'
 	response := abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}
-	app.log.Info("@@@@ ProcessProposal called. response: ", response.String())
+	mux.log.Debug("ProcessProposal called. response: ", response.String())
 	return &response, nil
 }
 
@@ -187,64 +204,86 @@ func (app *CometMux) ProcessProposal(_ context.Context, proposal *abcitypes.Requ
 //
 // Note: FinalizeBlock only prepares the update to be made and does not change the state of the application.
 // The state change is actually committed in a later stage i.e. in commit phase.
-func (app *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
-	app.log.Info("@@@ Finalize Block called: ", req.String())
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to FinalizeBlock failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
+func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
+	mux.log.Debug("Finalize Block called: ", req.String())
+
+	// TODO: triage txs per app and forward them
+	txResults := []*abcitypes.ExecTxResult{}
+	handlerTxs := map[uint8]([][]byte){}
+	for _, hdlr := range mux.clients {
+		handlerTxs[hdlr.ID] = [][]byte{}
 	}
-	cl := hdlr.client
-	response, err := cl.FinalizeBlock(ctx, req)
-	if err != nil {
-		app.log.Error("error forwarding FinalizeBlock: ", err)
-		return nil, err
+
+	for idx := range req.Txs {
+		hdlr, err := mux.getHandler(req.Txs[idx])
+		if err != nil {
+			mux.log.Error("call to FinalizeBlock failed:%v", err)
+			return nil, fmt.Errorf("no handler found for call")
+		}
+		// Add stripped transaction to handlers Tx set
+		handlerTxs[hdlr.ID] = append(handlerTxs[hdlr.ID], req.Txs[idx][MbHeaderLen:])
 	}
-	return response, err
+
+	// Send transactions to dedicated application
+	// TODO: figure out apphash, ordered responses, validator updates,...
+	response := abcitypes.ResponseFinalizeBlock{}
+	for hdlrID, txs := range handlerTxs {
+		newReq := *req
+		newReq.Txs = txs
+		mux.log.Debug("Forwarding FinalizeBlock to ", hdlrID)
+		appResp, err := mux.clients[uint(hdlrID)].client.FinalizeBlock(ctx, &newReq)
+		if err != nil {
+			return nil, err
+		}
+		txResults = append(txResults, appResp.GetTxResults()...)
+	}
+
+	// add aggregated txResuls
+	// TODO: This needs to be ordered according to the txs of the original request
+	response.TxResults = txResults
+	return &response, nil
 }
 
-func (app CometMux) Commit(ctx context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
-	app.log.Info("@@@ Commit called: ")
-	hdlr := app.getHandler()
-	if hdlr == nil {
-		app.log.Error("call to Commit failed: no handler found to forward call")
-		return nil, fmt.Errorf("no handler found for call")
+// Commit sends commit to all apps
+func (mux CometMux) Commit(ctx context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
+	mux.log.Debug("Commit called: ")
+	for _, hdlr := range mux.clients {
+		cl := hdlr.client
+		_, err := cl.Commit(ctx, commit)
+		if err != nil {
+			mux.log.Error("error forwarding Commit: ", err)
+			return nil, err
+		}
 	}
-	cl := hdlr.client
-	response, err := cl.Commit(ctx, commit)
-	if err != nil {
-		app.log.Error("error forwarding Commit: ", err)
-		return nil, err
-	}
-	return response, err
+	return &abcitypes.ResponseCommit{}, nil
 }
 
-func (app *CometMux) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
-	app.log.Info("@@@ ListSnapshots called: ", snapshots.String())
+func (mux *CometMux) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
+	mux.log.Debug("ListSnapshots called: ", snapshots.String())
 	return &abcitypes.ResponseListSnapshots{}, nil
 }
 
-func (app *CometMux) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
-	app.log.Info("@@@ OfferSnapshots called: ", snapshot.String())
+func (mux *CometMux) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
+	mux.log.Debug("OfferSnapshots called: ", snapshot.String())
 	return &abcitypes.ResponseOfferSnapshot{}, nil
 }
 
-func (app *CometMux) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
-	app.log.Info("@@@ LoadSnapshots called: ", chunk.String())
+func (mux *CometMux) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
+	mux.log.Debug("LoadSnapshots called: ", chunk.String())
 	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
 }
 
-func (app *CometMux) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
-	app.log.Info("@@@ ApplySnapshots called: ", chunk.String())
+func (mux *CometMux) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
+	mux.log.Debug("ApplySnapshots called: ", chunk.String())
 	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
 }
 
-func (app CometMux) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
-	app.log.Info("@@@ ExtendVote called: ", extend.String())
+func (mux CometMux) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
+	mux.log.Debug("ExtendVote called: ", extend.String())
 	return &abcitypes.ResponseExtendVote{}, nil
 }
 
-func (app *CometMux) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
-	app.log.Info("@@@ VerifyVoteExtension called: ", verify.String())
+func (mux *CometMux) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
+	mux.log.Debug("VerifyVoteExtension called: ", verify.String())
 	return &abcitypes.ResponseVerifyVoteExtension{}, nil
 }
