@@ -7,7 +7,7 @@ GOLANGCI_VERS=v1.54.1
 
 all: build test
 
-build: format lint
+build:
 	  go build -o ${BINARY_NAME} ./...
 .PHONY: build
 

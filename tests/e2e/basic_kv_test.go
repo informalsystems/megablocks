@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/exec"
 	"testing"
+	"time"
 
 	"github.com/cometbft/cometbft/rpc/client/http"
 	comettypes "github.com/cometbft/cometbft/types"
@@ -202,16 +203,23 @@ func TestBasicKVwithCosMux(t *testing.T) {
 	}
 
 	// Check transaction was successful
-	result, err := queryMbKVStore(client, appID, key)
-	if err != nil {
-		t.Errorf("query failed with %s", err.Error())
-		return
-	}
+	start := time.Now()
+	timeout := time.Second * 2
+	for {
+		result, err := queryMbKVStore(client, appID, key)
+		if err != nil {
+			t.Errorf("query failed with %s", err.Error())
+			return
+		}
+		t.Log("resulting value is: ", key, "=", result)
+		if result == value {
+			break
+		}
 
-	if result != value {
-		t.Errorf("Unexpected result for value: Expected %s, Got: %s", value, result)
-		return
+		if time.Since(start) > timeout {
+			t.Errorf("timed out checking KV result")
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	t.Log("resulting value is:", result)
-
 }

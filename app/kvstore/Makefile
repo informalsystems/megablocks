@@ -5,10 +5,11 @@
 BINARY_NAME=kvstore
 GOLANGCI_VERS=v1.54.1
 
-all: build test
+all: build
 
 build:
-	  go build -o ${BINARY_NAME} ./...
+	@echo Building kvstore
+	go build -o ${BINARY_NAME} ./...
 .PHONY: build
 
 lint:

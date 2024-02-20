@@ -61,7 +61,10 @@ func main() {
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
 	logger, err = cmtflags.ParseLogLevel(logLevel, logger, "*:info")
 	if err != nil {
-		log.Fatalf("failed to parse log level: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to parse log level: %v", err)
+		closeDB(db)
+		//nolint //exitAfterDefer
+		os.Exit(1)
 	}
 
 	app := NewKVStoreApplication(db, logger)
@@ -72,7 +75,6 @@ func main() {
 	if err := server.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error starting socket server: %v", err)
 		closeDB(db)
-		//nolint  // ignore exitAfterDefer as closeDB called explicitly
 		os.Exit(1)
 	}
 	defer server.Stop()
