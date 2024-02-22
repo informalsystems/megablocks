@@ -26,3 +26,4 @@ go.work.sum
 
 # Some VSCode files
 launch.json
+app/sdk-app1/cmd/sdk-appd/sdk-app1
