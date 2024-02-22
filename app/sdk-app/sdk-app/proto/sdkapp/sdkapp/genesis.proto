@@ -1,0 +1,17 @@
+syntax = "proto3";
+package sdkapp.sdkapp;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+import "sdkapp/sdkapp/params.proto";
+
+option go_package = "github.com/megablocks/sdk-app/x/sdkapp/types";
+
+// GenesisState defines the sdkapp module's genesis state.
+message GenesisState {
+  // params defines all the parameters of the module.
+  Params params = 1 [
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
+  ];
+}
