@@ -1,0 +1,17 @@
+syntax = "proto3";
+package xchange.xchange;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+import "xchange/xchange/params.proto";
+
+option go_package = "github.com/informalsystems/megablocks/app/xchange/x/xchange/types";
+
+// GenesisState defines the xchange module's genesis state.
+message GenesisState {
+  // params defines all the parameters of the module.
+  Params params = 1 [
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
+  ];
+}
