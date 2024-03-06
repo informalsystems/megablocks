@@ -8,46 +8,70 @@ import (
 	"syscall"
 )
 
-// startCosMux starts the Multiplexer shim
-func startCosMux() (*exec.Cmd, error) {
-	logFile, err := os.CreateTemp(os.TempDir(), "CosMux")
-	if err != nil {
-		return nil, fmt.Errorf("error creating log file for CosMux: %v", err)
+type CosMux struct {
+	Home    string
+	Binary  string
+	LogFile *os.File
+	Command *exec.Cmd
+}
+
+func createCosMux(home string) *CosMux {
+	return &CosMux{
+		Home:   home,
+		Binary: "../../cosmux/cosmux",
+	}
+}
+
+func (app *CosMux) Init() error {
+	if app.Home == "" {
+		app.Home = CometHome
+
+		// init CometBFT
+		err := initCometBFT(app.Home)
+		if err != nil {
+			return err
+		}
 	}
 
-	// init CometBFT
-	err = initCometBFT(CometHome)
+	logFile, err := os.CreateTemp(app.Home, "cosmux")
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("error creating log file for CosMux: %v", err)
 	}
+	app.LogFile = logFile
+	return err
+}
 
-	cmd := exec.Command("../../cosmux/cosmux", "-v", "--cmt-home", CometHome)
-	cmd.Stdout = logFile
+// Start starts the Multiplexer shim
+func (app *CosMux) Start() error {
+	cmd := exec.Command(app.Binary, "-v", "--cmt-home", app.Home)
+	cmd.Stdout = app.LogFile
 	// request to create process group to terminate created childrens as well
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	app.Command = cmd
 
-	err = cmd.Start()
+	err := cmd.Start()
 	if err != nil {
-		return nil, fmt.Errorf("error starting CosMux: %v", err)
+		return fmt.Errorf("error starting CosMux: %v", err)
 	}
 
 	err = waitCometBFT()
 	if err != nil {
 		cmd.Process.Kill()
 		log.Println("error running cosmux: ", cmd)
-		return nil, fmt.Errorf("starting CosMux failed: not reachable")
+		DumpLog(app.LogFile.Name())
+		return fmt.Errorf("starting CosMux failed: not reachable")
 	}
-	fmt.Printf("Started CosMux. PID=%d, Logs=%s\n", cmd.Process.Pid, logFile.Name())
-	return cmd, err
+	fmt.Printf("Started CosMux. PID=%d, Logs=%s\n", cmd.Process.Pid, app.LogFile.Name())
+	return err
 }
 
-func terminateCosMux(cmd *exec.Cmd) error {
-	if cmd == nil {
+func (app *CosMux) Stop() error {
+	if app.Command == nil {
 		return nil
 	}
 
 	fmt.Println("Terminating CosMux")
-	if err := cmd.Process.Kill(); err != nil {
+	if err := app.Command.Process.Kill(); err != nil {
 		log.Println("error terminating cosmux ", err)
 		return err
 	}

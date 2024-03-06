@@ -27,3 +27,4 @@ go.work.sum
 # Some VSCode files
 launch.json
 app/xchange/cmd/xchanged/xchanged
+app/sdk-chain-a/cmd/minid/minid

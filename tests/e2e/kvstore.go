@@ -7,26 +7,87 @@ import (
 	"path/filepath"
 )
 
-var (
-	KVSocket string = "unix:///tmp/kvapp.sock"
-)
+type KvApp struct {
+	ChainID     string
+	Home        string
+	Binary      string
+	Address     string
+	AddressType string
+	LogFile     *os.File
+	Command     *exec.Cmd
+}
 
-func startKVStore() (*exec.Cmd, error) {
-	kvHome := filepath.Join(os.TempDir(), "kvHome")
-	logFile, err := os.CreateTemp(os.TempDir(), "kvstorelog")
-	if err != nil {
-		return nil, fmt.Errorf("error creating logfile for kvstore: %v", err)
+func createKVStore() *KvApp {
+
+	app := KvApp{
+		ChainID:     "kvStore",
+		Home:        filepath.Join(os.TempDir(), "kvHome"),
+		Binary:      "../../app/kvstore/kvstore",
+		Address:     "/tmp/kvapp.sock",
+		AddressType: "socket",
 	}
-	cmd := exec.Command("../../app/kvstore/kvstore",
-		"-kv-home", kvHome,
+
+	return &app
+}
+
+func (app *KvApp) GetAddress() string {
+	switch app.AddressType {
+	case "socket":
+		return "unix://" + app.Address
+	default:
+		panic(fmt.Sprintf("Unsupported address type %s", app.AddressType))
+	}
+}
+
+func (app *KvApp) Init() error {
+	if app.Home == "" {
+		app.Home = filepath.Join(os.TempDir(), "kvStore")
+	}
+
+	if _, err := CreateHomeDirectory(app.Home); err != nil {
+		return err
+	}
+
+	if app.LogFile == nil {
+		logFile, err := os.CreateTemp(app.Home, "kvstore.log")
+		if err != nil {
+			return fmt.Errorf("error creating logfile for kvstore: %v", err)
+		}
+		app.LogFile = logFile
+	}
+	return nil
+}
+
+func (app *KvApp) Start() error {
+	cmd := exec.Command(app.Binary,
+		"-kv-home", app.Home,
 		"-v=3",
-		"-socket-addr", KVSocket)
-	cmd.Stdout = logFile
-	err = cmd.Start()
+		"-socket-addr", app.GetAddress())
+	cmd.Stdout = app.LogFile
+	cmd.Stderr = app.LogFile
+	app.Command = cmd
+	err := cmd.Start()
 	if err != nil {
-		return nil, fmt.Errorf("error starting kvStore application %v: %v", cmd, err)
+		return fmt.Errorf("error starting kvStore application %v: %v", cmd, err)
 	}
 
-	fmt.Printf("Started KVStore. PID:%d, Logs=%s\n", cmd.Process.Pid, logFile.Name())
-	return cmd, nil
+	fmt.Printf("Started KVStore. PID:%d, Logs=%s\n", cmd.Process.Pid, app.LogFile.Name())
+	return nil
+}
+
+func (app *KvApp) Stop() error {
+	// try a graceful termination of the process
+	if app.Command == nil {
+		return nil
+	}
+
+	cmd := app.Command
+	cmd.Process.Signal(os.Interrupt)
+	err := cmd.Wait()
+	if err != nil {
+		DumpLog(app.LogFile.Name())
+		fmt.Println("error stopping ", app, err)
+		cmd.Process.Kill()
+	}
+	return err
 }

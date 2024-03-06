@@ -135,17 +135,20 @@ func queryKVStore(key string) (string, error) {
 // Basic test to check that the transaction was performed successfully on KVStore application
 func TestBasicKVwithCometBFT(t *testing.T) {
 	// start applications
-	kvStore, err := startKVStore()
+	app := createKVStore()
+	app.Init()
+	err := app.Start()
+	defer stopApplications([]ChainApp{app})
 	if err != nil {
-		t.Errorf("error starting apps: %v", err)
+		t.Errorf("error starting KV Store: %v", err)
 		return
 	}
-	defer stopApplications([]*exec.Cmd{kvStore})
 
 	// start cometBFT
-	CometBFT, err = startCometBFT()
+	CometBFT, err := startCometBFT(app.GetAddress())
 	if err != nil {
-		err = fmt.Errorf("failed starting cometBFT: %v", err)
+		t.Errorf("failed starting cometBFT: %v", err)
+		return
 	}
 	defer terminateCometBFT(CometBFT)
 
@@ -160,7 +163,10 @@ func TestBasicKVwithCometBFT(t *testing.T) {
 
 	// Check transaction was successful
 	result, err := queryKVStore(key)
-
+	if err != nil {
+		t.Errorf("error querying KV store: %v", err)
+		return
+	}
 	if result != value {
 		t.Errorf("Unexpected result for value: Expected %s, Got: %s", value, result)
 		return
@@ -168,22 +174,31 @@ func TestBasicKVwithCometBFT(t *testing.T) {
 }
 
 func TestBasicKVwithCosMux(t *testing.T) {
-	// start applications
 
-	kvStore, err := startKVStore()
+	// start applications
+	kvApp := createKVStore()
+	sdkApp := createSdkApp()
+	apps, err := startApplications(kvApp, sdkApp)
 	if err != nil {
 		t.Errorf("error starting apps: %v", err)
 		return
 	}
-	defer stopApplications([]*exec.Cmd{kvStore})
+	defer stopApplications(apps)
 
+	//
 	// start multiplexer
-	cosmux, err := startCosMux()
+	cosmux := createCosMux(sdkApp.Home)
+	err = cosmux.Init()
 	if err != nil {
-		t.Errorf("failed starting cometBFT: %v", err)
+		t.Errorf("failed initializing multiplexer: %v", err)
 		return
 	}
-	defer terminateCosMux(cosmux)
+	err = cosmux.Start()
+	if err != nil {
+		t.Errorf("failed starting multiplexer: %v", err)
+		return
+	}
+	defer cosmux.Stop()
 
 	client, err := Client(HOST, fmt.Sprint(CometGrpcPort))
 	if err != nil {
@@ -204,19 +219,22 @@ func TestBasicKVwithCosMux(t *testing.T) {
 
 	// Check transaction was successful
 	start := time.Now()
-	timeout := time.Second * 2
+	timeout := time.Second * 11
 	for {
 		result, err := queryMbKVStore(client, appID, key)
 		if err != nil {
 			t.Errorf("query failed with %s", err.Error())
 			return
 		}
-		t.Log("resulting value is: ", key, "=", result)
 		if result == value {
 			break
+		} else if result != "" {
+			t.Errorf("Invalid value for %s: expected=%s, got=%s.", key, value, result)
+			return
 		}
 
 		if time.Since(start) > timeout {
+			t.Log("resulting value is: ", key, "=", result)
 			t.Errorf("timed out checking KV result")
 			return
 		}
