@@ -18,35 +18,12 @@ var (
 	HOST string = "localhost"
 )
 
-type kvEntry struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-type RpcResult struct {
-	Response kvEntry `json: "response"`
-}
-type RpcResponse struct {
-	Result RpcResult `json: "result"`
-}
-
-func sendTx(client *http.HTTP, tx comettypes.Tx) error {
-	ctx, loadCancel := context.WithCancel(context.Background())
-	defer loadCancel()
-	fmt.Println("Sending transaction")
-	if _, err := client.BroadcastTxSync(ctx, tx); err != nil {
-		return fmt.Errorf("error sending Tx to %v: %s", client, err.Error())
-	}
-	fmt.Println("Sent transaction")
-	return nil
-}
-
 // Set a key/value on the store
 func sendKvMBtransaction(client *http.HTTP, id uint8, key, value string) error {
 	tx := comettypes.Tx{0x23, 0x6d, 0x75, 0x78} //MAGIC
 	tx = append(tx, id)
 	tx = append(tx, []byte(fmt.Sprintf("%s=%s", key, value))...)
-	return sendTx(client, tx)
+	return SendTx(client, tx)
 }
 
 // queryMbKVStore sends a query to get the value for a given key

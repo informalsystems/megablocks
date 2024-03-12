@@ -101,7 +101,7 @@ func (app *SdkApp) Configure() error {
 	}
 
 	// ${APP_BIN} keys add ${NODE_KEY} --home ${NODE_DIR}
-	out, err = exec.Command(app.Binary, "keys", "add", app.NodeKey,
+	out, err = exec.Command(app.Binary, "keys", "add", app.NodeKey, "--keyring-backend", "test",
 		"--home", app.Home).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed adding keys '%v': %s", err, string(out))

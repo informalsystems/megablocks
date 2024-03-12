@@ -1,17 +1,44 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 
+	"github.com/cometbft/cometbft/rpc/client/http"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+	comettypes "github.com/cometbft/cometbft/types"
 )
 
 func Client(ip, proxyPort string) (*rpchttp.HTTP, error) {
 	return rpchttp.New(fmt.Sprintf("http://%s:%v", ip, proxyPort), "/websocket")
+}
+
+type KeyValEntry struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type RpcResult struct {
+	Response KeyValEntry `json: "response"`
+}
+type RpcResponse struct {
+	Result RpcResult `json: "result"`
+}
+
+// SendTx broadcast a transaction on a client connection
+func SendTx(client *http.HTTP, tx comettypes.Tx) error {
+	ctx, loadCancel := context.WithCancel(context.Background())
+	defer loadCancel()
+	fmt.Println("Sending transaction", tx)
+	if _, err := client.BroadcastTxSync(ctx, tx); err != nil {
+		return fmt.Errorf("error sending Tx to %v: %s", client, err.Error())
+	}
+	fmt.Println("Sent transaction")
+	return nil
 }
 
 // startApplications starts all chain applications
