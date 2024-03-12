@@ -123,6 +123,15 @@ func (mux *CometMux) getHandler(header []byte) (*AbciHandler, error) {
 	return mux.clients[id], nil
 }
 
+func (mux *CometMux) getHandlerFromChainId(chainID string) (*AbciHandler, error) {
+	for _, client := range mux.clients {
+		if client.ChainID == chainID {
+			return client, nil
+		}
+	}
+	return nil, fmt.Errorf("no application handler found for chain-id '%s'", chainID)
+}
+
 // CheckHeader verifies if the tx contains a valid Megablocks header
 func CheckHeader(tx []byte) error {
 	if len(tx) < MbHeaderLen {
@@ -158,18 +167,24 @@ func (mux *CometMux) Info(ctx context.Context, info *abcitypes.RequestInfo) (*ab
 
 // Query relays a query to the corresponding application
 func (mux *CometMux) Query(ctx context.Context, req *abcitypes.RequestQuery) (*abcitypes.ResponseQuery, error) {
-	mux.log.Debug("Query called: ", req.String())
+	mux.log.Debug("Query called for: ", req.String())
+	mux.log.Debug("Query for chain id: ", req.ChainId)
 
 	// TODO : to be defined how to identify the target application on queries
 	// use hardcoded handler for now
-	hdlr, err := mux.getHandler(req.Data[:MbHeaderLen])
+	/* 	path := strings.Split(req.Path, ":")
+	   	if len(path) != 2 {
+	   		err := fmt.Errorf("query failed: no chain info in quey found")
+	   		mux.log.Error(err.Error())
+	   		return nil, err
+	   	}
+	*/
+	hdlr, err := mux.getHandlerFromChainId(req.ChainId)
 	if err != nil {
 		mux.log.Error("call to Query failed: no handler found to forward call: %v", err)
 		return nil, fmt.Errorf("query failed: %v", err)
 	}
-
-	// Strip Megablocks header
-	req.Data = req.Data[MbHeaderLen:]
+	//req.Path = path[1]
 	cl := hdlr.client
 	response, err := cl.Query(ctx, req)
 	if err != nil {
