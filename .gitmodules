@@ -1,0 +1,4 @@
+[submodule "cosmos/cometbft"]
+	path = cosmos/cometbft
+	url = git@github.com:bermuell/cometbft.git
+	branch = megablocks
