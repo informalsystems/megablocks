@@ -21,15 +21,13 @@ var (
 )
 
 func initCometBFT(cometHome string) error {
-	fmt.Println("Initializing CometBFT")
-	_, err := os.Stat(CometHome)
-	if err == nil {
-		fmt.Println("Deleting existing comet home :", CometHome)
-		err = os.RemoveAll(CometHome)
-		if err != nil {
-			return fmt.Errorf("error initializing cometBFT: %s", err.Error())
-		}
+	fmt.Println("Initializing CometBFT: ", cometHome)
+
+	cometHome, err := CreateHomeDirectory(cometHome)
+	if err != nil {
+		return fmt.Errorf("error initializing cometBFT: %s", err.Error())
 	}
+
 	cmd := exec.Command("go", "run", CometURL, "init", "--home", cometHome)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -59,7 +57,7 @@ func waitCometBFT() error {
 	return err
 }
 
-func startCometBFT() (*exec.Cmd, error) {
+func startCometBFT(proxy_app string) (*exec.Cmd, error) {
 	logFile, err := os.CreateTemp(os.TempDir(), "cometBFT")
 	if err != nil {
 		return nil, fmt.Errorf("error creating log file for cometBFT: %v", err)
@@ -71,7 +69,7 @@ func startCometBFT() (*exec.Cmd, error) {
 		return nil, err
 	}
 
-	cmd := exec.Command("go", "run", CometURL, "node", "--home", CometHome, "--rpc.laddr", CometGrpcURL, "--proxy_app", KVSocket)
+	cmd := exec.Command("go", "run", CometURL, "node", "--home", CometHome, "--rpc.laddr", CometGrpcURL, "--proxy_app", proxy_app)
 	cmd.Stdout = logFile
 	// request to create process group to terminate created childrens as well
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -86,7 +84,8 @@ func startCometBFT() (*exec.Cmd, error) {
 		_ = terminateCometBFT(cmd)
 		return nil, err
 	}
-	fmt.Printf("Started CometBFT. PID=%d, Logs=%s\n", cmd.Process.Pid, logFile.Name())
+	fmt.Printf("Started CometBFT. PID=%d, Logs=%s\n",
+		cmd.Process.Pid, logFile.Name())
 	return cmd, err
 }
 

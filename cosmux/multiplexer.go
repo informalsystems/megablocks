@@ -25,17 +25,24 @@ var (
 type CometMux struct {
 	log     cmtlog.Logger
 	clients map[uint]*AbciHandler
+	cfg     CosmuxConfig
 }
 
 type AbciHandler struct {
-	ID     uint8 // unique application identifier
-	client abcicli.Client
+	ID       uint8 // unique application identifier
+	ChainID  string
+	client   abcicli.Client
+	logLevel string
 }
 
 // Connect creates the client and connects to the chain application
 func (hdl *AbciHandler) Connect() error {
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout)).With("module",
 		fmt.Sprintf("app-%d", hdl.ID))
+	logger, err := cmtflags.ParseLogLevel(hdl.logLevel, logger, cfg.DefaultLogLevel)
+	if err != nil {
+		return err
+	}
 	hdl.client.SetLogger(logger)
 
 	// Start client
@@ -68,6 +75,7 @@ func NewMultiplexer(config CosmuxConfig) *CometMux {
 	m := CometMux{
 		log:     logger,
 		clients: map[uint]*AbciHandler{},
+		cfg:     config,
 	}
 	return &m
 }
@@ -83,8 +91,10 @@ func (mux *CometMux) AddApplication(app MegaBlockApp) error {
 		return err
 	}
 	mux.clients[uint(app.ID)] = &AbciHandler{
-		ID:     app.ID,
-		client: client,
+		ID:       app.ID,
+		ChainID:  app.ChainID,
+		client:   client,
+		logLevel: mux.cfg.LogLevel,
 	}
 	return nil
 }
@@ -132,7 +142,18 @@ func CheckHeader(tx []byte) error {
 // Info calls are not forwarded to chain apps
 func (mux *CometMux) Info(ctx context.Context, info *abcitypes.RequestInfo) (*abcitypes.ResponseInfo, error) {
 	mux.log.Debug("Info called: ", info)
-	return &abcitypes.ResponseInfo{}, nil
+	response := abcitypes.ResponseInfo{}
+	var err error = nil
+	for _, clt := range mux.clients {
+		resp, rc := clt.client.Info(ctx, info)
+		if rc != nil {
+			err = rc
+		} else {
+			// TODO: LastBlock Apphash for multi-apps
+			response = *resp
+		}
+	}
+	return &response, err
 }
 
 // Query relays a query to the corresponding application
@@ -181,8 +202,25 @@ func (mux *CometMux) CheckTx(ctx context.Context, check *abcitypes.RequestCheckT
 // InitChain
 func (mux *CometMux) InitChain(ctx context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
 	mux.log.Debug("InitChain called: ", chain.String())
-	// TODO: dispatching logic to be decided as this one contains validator set. for now it's a noop
-	return &abcitypes.ResponseInitChain{}, nil
+	// TODO: dispatching logic to be decided as this one contains validator set. for now it's a noop\
+	response := &abcitypes.ResponseInitChain{}
+	var err error = nil
+	//chainID := chain.ChainId
+	for _, client := range mux.clients {
+		/* 		chainReq := *chain
+		   		chainReq.ChainId = client.ChainID
+		*/
+		chain.ChainId = client.ChainID
+		resp, rc := client.client.InitChain(ctx, chain)
+		if rc != nil {
+			mux.log.Error("error on InitChain from %s: %s", client.ChainID, rc.Error())
+			err = rc
+		} else {
+			mux.log.Debug("InitResponse from chain %s: %+v", client.ChainID, resp)
+			response = resp //TODO: needs to be adapted to multiple chains as APPHASH is part of this response
+		}
+	}
+	return response, err
 }
 
 func (mux *CometMux) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
@@ -205,7 +243,7 @@ func (mux *CometMux) ProcessProposal(_ context.Context, proposal *abcitypes.Requ
 // Note: FinalizeBlock only prepares the update to be made and does not change the state of the application.
 // The state change is actually committed in a later stage i.e. in commit phase.
 func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
-	mux.log.Debug("Finalize Block called: ", req.String())
+	mux.log.Debug("Finalize Block called: #Txs=", len(req.Txs), "req=", req.String())
 
 	// TODO: triage txs per app and forward them
 	txResults := []*abcitypes.ExecTxResult{}
@@ -226,6 +264,7 @@ func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFi
 
 	// Send transactions to dedicated application
 	// TODO: figure out apphash, ordered responses, validator updates,...
+	appHashes := []byte{}
 	response := abcitypes.ResponseFinalizeBlock{}
 	for hdlrID, txs := range handlerTxs {
 		newReq := *req
@@ -233,14 +272,17 @@ func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFi
 		mux.log.Debug("Forwarding FinalizeBlock to ", hdlrID)
 		appResp, err := mux.clients[uint(hdlrID)].client.FinalizeBlock(ctx, &newReq)
 		if err != nil {
+			mux.log.Error("call to FinalizeBlock failed: %v", err)
 			return nil, err
 		}
 		txResults = append(txResults, appResp.GetTxResults()...)
+		appHashes = appResp.AppHash
 	}
 
 	// add aggregated txResuls
 	// TODO: This needs to be ordered according to the txs of the original request
 	response.TxResults = txResults
+	response.AppHash = appHashes
 	return &response, nil
 }
 

@@ -27,17 +27,27 @@ type MegaBlockApp struct {
 	ID             uint8 // app identifier used to route tx
 	Address        string
 	ConnectionType string
-	Name           string
+	ChainID        string
 }
 
 // ChainApps is a list of applications handled by Multiplexer
 // TODO: get this from a config file
 var ChainApps []MegaBlockApp = []MegaBlockApp{
+	// KV-Store-Chain
 	{
 		ID:             1,
 		Address:        "unix:///tmp/kvapp.sock",
 		ConnectionType: "socket",
-		Name:           "KVStore",
+		ChainID:        "KVStore",
+	},
+
+	// SDK-App-1
+	{
+		ID: 2,
+		//Address:        "127.0.0.1:26658",
+		Address:        "unix:///tmp/mind.sock",
+		ConnectionType: "socket",
+		ChainID:        "sdk-app-2",
 	},
 }
 
@@ -69,14 +79,13 @@ func main() {
 	flag.Parse()
 
 	if homeDir == "" {
-		homeDir = os.ExpandEnv("$HOME/.cometbft")
+		homeDir = os.ExpandEnv("$HOME/.cosmux")
 	}
 	config := configureCometBFT(homeDir)
 
 	// override loglevel config if requested
 	if verbose {
-		fmt.Println("overriding logleve ", verbose)
-		config.LogLevel = "debug"
+		config.LogLevel = "debug" //"*:error,p2p:info,state:info"
 	}
 
 	// Create Multiplexer Shim
@@ -94,7 +103,7 @@ func main() {
 		log.Fatalf("error starting cosmux; %v", err)
 	}
 
-	// use private validator to sign co	nsensus messages
+	// use private validator to sign consensus messages
 	pv := privval.LoadFilePV(
 		config.PrivValidatorKeyFile(),
 		config.PrivValidatorStateFile(),
