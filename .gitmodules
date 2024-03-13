@@ -2,3 +2,7 @@
 	path = cosmos/cometbft
 	url = git@github.com:bermuell/cometbft.git
 	branch = megablocks
+[submodule "cosmos/cosmos-sdk"]
+	path = cosmos/cosmos-sdk
+	url = git@github.com:bermuell/cosmos-sdk.git
+	branch = megablocks
