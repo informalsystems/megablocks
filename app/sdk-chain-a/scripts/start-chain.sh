@@ -22,8 +22,13 @@ fi
 
 echo Home is ${NODE_DIR}
 
-# sdk-app key
-NODE_KEY=alice
+# sdk-app keys
+KEY_NODE=carol
+MNEMONIC_NODE="wagon angry enforce security average fat exclude stable control below law valley cable giggle spawn round dance absent comic snow urban clerk hobby sing"
+KEY_ALICE=alice
+MNEMONIC_ALICE="mammal accuse rapid blur fresh scissors attack wet one begin reduce arch winner noodle quick achieve quick hard olive must pattern tornado wise winter"
+KEY_BOB=bob
+MNEMONIC_BOB="adjust absurd witness inner differ click system option decline hurt fee supreme transfer diesel industry sniff use material sweet few multiply october pass eternal"
 
 APP_NAME="minid"
 APP_BIN=$(which minid)
@@ -41,17 +46,20 @@ rm -rf ${NODE_DIR}
 ${APP_BIN}  config set client chain-id ${CHAIN_ID} --home ${NODE_DIR}
 ${APP_BIN}  config set client keyring-backend test --home ${NODE_DIR}
 
-${APP_BIN} keys add ${NODE_KEY} --home ${NODE_DIR}
+
+echo ${MNEMONIC_ALICE} | ${APP_BIN} keys add ${KEY_ALICE} --home ${NODE_DIR} --keyring-backend test --recover
+echo ${MNEMONIC_BOB} | ${APP_BIN} keys add ${KEY_BOB} --home ${NODE_DIR} --keyring-backend test --recover
+echo ${MNEMONIC_NODE} | ${APP_BIN} keys add ${KEY_NODE} --home ${NODE_DIR} --keyring-backend test --recover
 
 
 ${APP_BIN} init ${MONIKER} --chain-id ${CHAIN_ID} --home ${NODE_DIR}
 
 
 # update genesis
-${APP_BIN} genesis add-genesis-account ${NODE_KEY} 10000000stake --keyring-backend test --home ${NODE_DIR}
+${APP_BIN} genesis add-genesis-account ${KEY_NODE} 10000000stake --keyring-backend test --home ${NODE_DIR}
 
 # create default validator
-${APP_BIN} genesis gentx ${NODE_KEY} 1000000stake --chain-id ${CHAIN_ID} --home ${NODE_DIR}
+${APP_BIN} genesis gentx ${KEY_NODE} 1000000stake --chain-id ${CHAIN_ID} --home ${NODE_DIR} --keyring-backend test
 ${APP_BIN} genesis collect-gentxs --gentx-dir ${NODE_DIR}/config/gentx/ --home ${NODE_DIR}
 
 # Fix SDK issue generating initial height with wrong json data-type

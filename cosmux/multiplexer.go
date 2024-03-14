@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"log"
 	"os"
@@ -18,18 +19,20 @@ import (
 // MAGIC used in the header of each valid Megablocks transaction
 var (
 	MAGIC           = [...]byte{0x23, 0x6d, 0x75, 0x78}
-	MbHeaderLen int = len(MAGIC) + 1 // MAGIC + AppID (1byte)
+	MbHeaderLen int = len(MAGIC) + 4 // MAGIC + 4byte-hash of ChainID
 )
+
+type ChainAppIdentifer [4]byte
 
 // CometMux is an ABCI++ block multiplexer
 type CometMux struct {
 	log     cmtlog.Logger
-	clients map[uint]*AbciHandler
+	clients map[ChainAppIdentifer]*AbciHandler
 	cfg     CosmuxConfig
 }
 
 type AbciHandler struct {
-	ID       uint8 // unique application identifier
+	ID       ChainAppIdentifer // unique application identifier
 	ChainID  string
 	client   abcicli.Client
 	logLevel string
@@ -74,7 +77,7 @@ func NewMultiplexer(config CosmuxConfig) *CometMux {
 	}
 	m := CometMux{
 		log:     logger,
-		clients: map[uint]*AbciHandler{},
+		clients: map[ChainAppIdentifer]*AbciHandler{},
 		cfg:     config,
 	}
 	return &m
@@ -82,16 +85,21 @@ func NewMultiplexer(config CosmuxConfig) *CometMux {
 
 // AddApplication adds a chain application to the multiplexer
 func (mux *CometMux) AddApplication(app MegaBlockApp) error {
-	_, exists := mux.clients[uint(app.ID)]
+	sha1Sum := sha1.Sum([]byte(app.ChainID))
+	appId := ChainAppIdentifer(sha1Sum[:5])
+
+	_, exists := mux.clients[appId]
 	if exists {
 		log.Fatal("handler exists already with ID", app.ID)
+	} else {
+		mux.log.Info(fmt.Sprintf("@@@ Adding handler for %s= %v", app.ChainID, appId))
 	}
 	client, err := proxy.NewRemoteClientCreator(app.Address, app.ConnectionType, true).NewABCIClient()
 	if err != nil {
 		return err
 	}
-	mux.clients[uint(app.ID)] = &AbciHandler{
-		ID:       app.ID,
+	mux.clients[appId] = &AbciHandler{
+		ID:       appId,
 		ChainID:  app.ChainID,
 		client:   client,
 		logLevel: mux.cfg.LogLevel,
@@ -110,17 +118,19 @@ func (mux *CometMux) Start() error {
 }
 
 func (mux *CometMux) getHandler(header []byte) (*AbciHandler, error) {
+	// Check if tx has a valid megablocks header
 	if err := CheckHeader(header); err != nil {
 		mux.log.Error(err.Error())
 		return nil, err
 	}
-	id := uint(header[MbHeaderLen-1])
-	if _, exists := mux.clients[id]; !exists {
+
+	appId := ChainAppIdentifer(header[len(MAGIC) : MbHeaderLen+1])
+	if _, exists := mux.clients[appId]; !exists {
 		// Header references invalid application which should never happen
 		return nil, fmt.Errorf("no application handler found in megablocks header: len=%d, %v",
 			len(header), header)
 	}
-	return mux.clients[id], nil
+	return mux.clients[appId], nil
 }
 
 func (mux *CometMux) getHandlerFromChainId(chainID string) (*AbciHandler, error) {
@@ -138,8 +148,8 @@ func CheckHeader(tx []byte) error {
 		return fmt.Errorf("invalid tx header length: %d", len(tx))
 	}
 	// check Magic
-	if !bytes.Equal(tx[:MbHeaderLen-1], MAGIC[:]) {
-		return fmt.Errorf("invalid Megablocks tx header: %v", tx[:MbHeaderLen-1])
+	if !bytes.Equal(tx[:len(MAGIC)], MAGIC[:]) {
+		return fmt.Errorf("invalid Megablocks tx header: %v", tx[:len(MAGIC)])
 	}
 	return nil
 }
@@ -170,15 +180,6 @@ func (mux *CometMux) Query(ctx context.Context, req *abcitypes.RequestQuery) (*a
 	mux.log.Debug("Query called for: ", req.String())
 	mux.log.Debug("Query for chain id: ", req.ChainId)
 
-	// TODO : to be defined how to identify the target application on queries
-	// use hardcoded handler for now
-	/* 	path := strings.Split(req.Path, ":")
-	   	if len(path) != 2 {
-	   		err := fmt.Errorf("query failed: no chain info in quey found")
-	   		mux.log.Error(err.Error())
-	   		return nil, err
-	   	}
-	*/
 	hdlr, err := mux.getHandlerFromChainId(req.ChainId)
 	if err != nil {
 		mux.log.Error("call to Query failed: no handler found to forward call: %v", err)
@@ -262,7 +263,7 @@ func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFi
 
 	// TODO: triage txs per app and forward them
 	txResults := []*abcitypes.ExecTxResult{}
-	handlerTxs := map[uint8]([][]byte){}
+	handlerTxs := map[ChainAppIdentifer]([][]byte){}
 	for _, hdlr := range mux.clients {
 		handlerTxs[hdlr.ID] = [][]byte{}
 	}
@@ -285,7 +286,7 @@ func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFi
 		newReq := *req
 		newReq.Txs = txs
 		mux.log.Debug("Forwarding FinalizeBlock to ", hdlrID)
-		appResp, err := mux.clients[uint(hdlrID)].client.FinalizeBlock(ctx, &newReq)
+		appResp, err := mux.clients[hdlrID].client.FinalizeBlock(ctx, &newReq)
 		if err != nil {
 			mux.log.Error("call to FinalizeBlock failed: %v", err)
 			return nil, err
