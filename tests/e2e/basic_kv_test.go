@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	rpcclient "github.com/cometbft/cometbft/rpc/client"
 	"github.com/cometbft/cometbft/rpc/client/http"
-	comettypes "github.com/cometbft/cometbft/types"
 )
 
 var (
@@ -19,22 +19,23 @@ var (
 )
 
 // Set a key/value on the store
-func sendKvMBtransaction(client *http.HTTP, id uint8, key, value string) error {
-	tx := comettypes.Tx{0x23, 0x6d, 0x75, 0x78} //MAGIC
-	tx = append(tx, id)
+func sendKvMBtransaction(client *http.HTTP, chainID, key, value string) error {
+	tx := CreateMegablocksHeader(chainID)
 	tx = append(tx, []byte(fmt.Sprintf("%s=%s", key, value))...)
 	return SendTx(client, tx)
 }
 
 // queryMbKVStore sends a query to get the value for a given key
 // by using megablocks header on the query data
-func queryMbKVStore(client *http.HTTP, id uint8, key string) (string, error) {
+func queryMbKVStore(client *http.HTTP, chainID, key string) (string, error) {
 	ctx, loadCancel := context.WithCancel(context.Background())
-	mbKey := []byte{0x23, 0x6d, 0x75, 0x78} //MAGIC
-	mbKey = append(mbKey, id)
-	mbKey = append(mbKey, []byte(key)...)
-
-	response, err := client.ABCIQuery(ctx, "", mbKey)
+	mbKey := []byte(key)
+	opts := rpcclient.ABCIQueryOptions{
+		Height:  0,
+		Prove:   false,
+		ChainId: chainID,
+	}
+	response, err := client.ABCIQueryWithOptions(ctx, "", mbKey, opts)
 	defer loadCancel()
 	if err != nil {
 		return "", fmt.Errorf("query failed with: %s", err.Error())
@@ -187,8 +188,7 @@ func TestBasicKVwithCosMux(t *testing.T) {
 	// Set an entry in the KVStore
 	key := "cosmux"
 	value := "muxTestEntry"
-	appID := uint8(1)
-	err = sendKvMBtransaction(client, appID, key, value)
+	err = sendKvMBtransaction(client, kvApp.ChainID, key, value)
 	if err != nil {
 		t.Errorf("Send transaction failed: %v", err)
 		return
@@ -198,7 +198,7 @@ func TestBasicKVwithCosMux(t *testing.T) {
 	start := time.Now()
 	timeout := time.Second * 11
 	for {
-		result, err := queryMbKVStore(client, appID, key)
+		result, err := queryMbKVStore(client, kvApp.ChainID, key)
 		if err != nil {
 			t.Errorf("query failed with %s", err.Error())
 			return

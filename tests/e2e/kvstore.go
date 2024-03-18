@@ -20,7 +20,7 @@ type KvApp struct {
 func createKVStore() *KvApp {
 
 	app := KvApp{
-		ChainID:     "kvStore",
+		ChainID:     "KVStore",
 		Home:        filepath.Join(os.TempDir(), "kvHome"),
 		Binary:      "../../app/kvstore/kvstore",
 		Address:     "/tmp/kvapp.sock",

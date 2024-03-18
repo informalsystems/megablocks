@@ -11,8 +11,8 @@ import (
 // were processed as expected
 func TestManualClient(t *testing.T) {
 	t.Skip()
-	appID := uint8(1)
 	kvs := map[string]string{}
+
 	client, err := Client(HOST, fmt.Sprint(CometGrpcPort))
 	if err != nil {
 		t.Errorf("error creating client: %v", err)
@@ -24,10 +24,10 @@ func TestManualClient(t *testing.T) {
 		kvs[fmt.Sprintf("key_%d", i)] = fmt.Sprintf("value_%d", i)
 	}
 	// Send KVStore transactions
+	kvApp := createKVStore()
 	for key, value := range kvs {
-		fmt.Printf("Sending transaction with AppID=%d: %s=%s\n", appID, key, value)
-		sendKvMBtransaction(client, appID, key, value)
-		//sendKVtransaction(key, value)
+		fmt.Printf("Sending transaction for chain '%s': %s=%s\n", kvApp.ChainID, key, value)
+		sendKvMBtransaction(client, kvApp.ChainID, key, value)
 	}
 
 	// Check transaction was successful
@@ -36,7 +36,7 @@ func TestManualClient(t *testing.T) {
 	for key, value := range kvs {
 		fmt.Println("Checking for key", key, " matching value", value)
 		for {
-			result, err := queryMbKVStore(client, appID, key)
+			result, err := queryMbKVStore(client, kvApp.ChainID, key)
 			if err != nil {
 				t.Errorf("query failed with %s", err.Error())
 				return
