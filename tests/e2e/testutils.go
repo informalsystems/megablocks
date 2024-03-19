@@ -8,10 +8,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/cometbft/cometbft/rpc/client/http"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	comettypes "github.com/cometbft/cometbft/types"
+)
+
+var (
+	BlockTime time.Duration = time.Second * 3
 )
 
 // createMegablocksHeader creates the header needed for all transactions of megablocks

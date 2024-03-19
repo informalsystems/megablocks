@@ -56,7 +56,7 @@ ${APP_BIN} init ${MONIKER} --chain-id ${CHAIN_ID} --home ${NODE_DIR}
 
 
 # update genesis
-${APP_BIN} genesis add-genesis-account ${KEY_NODE} 10000000stake --keyring-backend test --home ${NODE_DIR}
+${APP_BIN} genesis add-genesis-account ${KEY_NODE} 10000000stake --keyring-backend test --home ${NODE_DIR}  --chain-id ${CHAIN_ID}
 
 # create default validator
 ${APP_BIN} genesis gentx ${KEY_NODE} 1000000stake --chain-id ${CHAIN_ID} --home ${NODE_DIR} --keyring-backend test

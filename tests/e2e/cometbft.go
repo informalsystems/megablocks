@@ -51,6 +51,8 @@ func waitCometBFT() error {
 		if elapsed > time.Second*20 {
 			err = fmt.Errorf("CometBFT not reachable on %s", CometGrpcAddress)
 			break
+		} else {
+			fmt.Println("Dialing", CometGrpcAddress)
 		}
 		time.Sleep(time.Millisecond * 200)
 	}
