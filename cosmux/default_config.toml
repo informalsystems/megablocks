@@ -1,0 +1,13 @@
+log_level = "debug"
+
+[[apps]]
+    Address =        "unix:///tmp/kvapp.sock"
+    ConnectionType = "socket"
+    ChainID = "KVStore"
+    Home = "/tmp/kvstore"
+
+[[apps]]
+    Address =        "unix:///tmp/mind.sock"
+    ConnectionType = "socket"
+    ChainID =        "sdk-app-2"
+    Home = "/tmp/sdk-app-2"

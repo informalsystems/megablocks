@@ -27,3 +27,11 @@ install:
 	$(MAKE) -C ./app/sdk-chain-a install
 	${MAKE} -C ./app/kvstore install
 .PHONY: install
+
+.PHONY: cleanup
+cleanup:
+	killall cosmux;\
+	killall minid; \
+	killall kvstore; \
+	rm  -f /tmp/kvapp.sock; \
+	rm  -f /tmp/mind.sock;

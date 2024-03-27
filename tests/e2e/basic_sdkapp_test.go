@@ -85,7 +85,10 @@ func TestBasicSendTransactionAndQuery(t *testing.T) {
 
 }
 
-func TestBasicSdkQueryWithWrongChain(t *testing.T) {
+// Test that queries using an invalid/unknown chain identifier
+// are failing on cosmux level due to not finding a handler for the
+// given chain.
+func TestBasicSdkQueryWithWrongChainId(t *testing.T) {
 
 	// start applications
 	kvApp := createKVStore()
