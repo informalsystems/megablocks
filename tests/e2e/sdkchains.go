@@ -24,6 +24,10 @@ type ChainApp interface {
 	Init() error
 	Start() error
 	Stop() error
+	GetChainID() string
+	GetAddress() string
+	GetAddressType() string
+	GetHome() string
 }
 
 type SdkApp struct {
@@ -42,14 +46,14 @@ type SdkApp struct {
 func createSdkApp() *SdkApp {
 	return &SdkApp{
 		ChainID:     "sdk-app-2",
-		Home:        filepath.Join(os.TempDir(), "sdk-app-2"),
+		Home:        "/tmp/sdk-app-2", //TODO: Move back to : filepath.Join(os.TempDir(), "sdk-app-2"),
 		Binary:      "../../app/sdk-chain-a/cmd/minid/minid",
 		Address:     "/tmp/mind.sock",
 		AddressType: "socket",
 		Command:     nil,
 		Moniker:     "minid",
 		NodeKey:     "alice",
-		Keys:        []string{"bob", "alice"},
+		Keys:        []string{"bob", "alice", "carol"},
 	}
 }
 
@@ -142,7 +146,7 @@ func (app *SdkApp) AddKey(name string) error {
 
 func (app *SdkApp) Init() error {
 	if app.Home == "" {
-		app.Home = filepath.Join(os.TempDir(), "sdk-chain-a")
+		app.Home = filepath.Join(os.TempDir(), "sdk-chain-2")
 	}
 
 	if _, err := CreateHomeDirectory(app.Home); err != nil {
@@ -150,7 +154,8 @@ func (app *SdkApp) Init() error {
 	}
 
 	if app.LogFile == nil {
-		logFile, err := os.CreateTemp(app.Home, "sdk-chain-a.log")
+		log := filepath.Join(app.Home, "sdk-chain-a.log")
+		logFile, err := os.Create(log)
 		if err != nil {
 			return fmt.Errorf("error creating log file for sdk-chain-a: %v", err)
 		}
@@ -193,6 +198,8 @@ func (app *SdkApp) Start() error {
 		"--p2p.laddr", "tcp://127.0.0.1:26656",
 		"--grpc-web.enable=false",
 		"--log_level=trace",
+		"--trace",
+		"--log_no_color",
 		"--with-comet=false",
 		"--home", app.Home,
 	)
@@ -210,7 +217,7 @@ func (app *SdkApp) Start() error {
 		return err
 	}
 
-	fmt.Printf("Started sdk-chain-a. PID:%d, Logs=%s\n", app.Command.Process.Pid, app.LogFile.Name())
+	fmt.Printf("Started sdk-chain-a. PID: %d, Logs: %s\n", app.Command.Process.Pid, app.LogFile.Name())
 	return nil
 }
 
@@ -286,19 +293,23 @@ func (app *SdkApp) GetLatestBlockHeight() (int, error) {
 // Wait until a minimal block height is reached
 func (app *SdkApp) waitForBlockHeight(height int, timeout time.Duration) error {
 	startTime := time.Now()
+	currentHeight := 0
 	for {
-		currentHeight, err := app.GetLatestBlockHeight()
-		if err != nil {
-			return err
-		}
-		if currentHeight >= height {
-			return nil
-		}
-
 		elapsed := time.Since(startTime)
 		if elapsed > timeout {
 			return fmt.Errorf("timed out at height=%d while waiting for height %d", currentHeight, height)
 		}
+
+		currentHeight, err := app.GetLatestBlockHeight()
+		if err != nil {
+			log.Println("error getting latest block...", err, "retrying")
+			continue
+		}
+		time.Sleep(time.Millisecond * 100)
+		if currentHeight >= height {
+			return nil
+		}
+
 	}
 }
 
@@ -342,15 +353,21 @@ func (app *SdkApp) SendBankTransaction(fromAddress, toAddress, amount string) er
 	cmd := exec.Command(app.Binary,
 		"--home", app.Home,
 		"--chain-id", app.ChainID,
+		"--gas", "auto",
 		"--keyring-backend", "test",
 		"--log_level=trace",
 		"tx", "bank", "send", fromAddress, toAddress, amount,
-		"--yes")
+		"--yes",
+	)
+
+	log.Println("Running command:", cmd)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Println("failed running command:", cmd)
 		return fmt.Errorf("failed sending bank transaction '%v': %s",
 			err, string(out))
+	} else {
+		log.Println("Sent transaction", string(out))
 	}
 	return err
 }
@@ -367,4 +384,16 @@ func (app *SdkApp) GetUserAddress(user string) (string, error) {
 			user, err, string(out))
 	}
 	return strings.TrimSpace(string(out)), err
+}
+
+func (app *SdkApp) GetChainID() string {
+	return app.ChainID
+}
+
+func (app *SdkApp) GetAddressType() string {
+	return app.AddressType
+}
+
+func (app *SdkApp) GetHome() string {
+	return app.Home
 }

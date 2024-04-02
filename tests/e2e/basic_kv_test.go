@@ -165,7 +165,7 @@ func TestBasicKVwithCosMux(t *testing.T) {
 
 	//
 	// start multiplexer
-	cosmux := createCosMux(sdkApp.Home)
+	cosmux := createCosMux(sdkApp.Home, apps)
 	err = cosmux.Init()
 	if err != nil {
 		t.Errorf("failed initializing multiplexer: %v", err)

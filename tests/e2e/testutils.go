@@ -56,7 +56,7 @@ func SendTx(client *http.HTTP, tx comettypes.Tx) error {
 	if _, err := client.BroadcastTxSync(ctx, tx); err != nil {
 		return fmt.Errorf("error sending Tx to %v: %s", client, err.Error())
 	}
-	fmt.Println("Sent transaction")
+	fmt.Println("Sent transaction", tx)
 	return nil
 }
 

@@ -28,8 +28,8 @@ install:
 	${MAKE} -C ./app/kvstore install
 .PHONY: install
 
-.PHONY: cleanup
-cleanup:
+.PHONY: clean
+clean:
 	killall cosmux;\
 	killall minid; \
 	killall kvstore; \

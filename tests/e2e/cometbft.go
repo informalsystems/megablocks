@@ -37,6 +37,7 @@ func initCometBFT(cometHome string) error {
 }
 
 func waitCometBFT() error {
+	fmt.Println("Checking if CometBFT is up")
 	var err error
 	// check if it's reachable
 	startTime := time.Now()
@@ -48,13 +49,13 @@ func waitCometBFT() error {
 			return rc
 		}
 		elapsed := time.Since(startTime)
-		if elapsed > time.Second*20 {
+		if elapsed > time.Second*10 {
 			err = fmt.Errorf("CometBFT not reachable on %s", CometGrpcAddress)
 			break
 		} else {
 			fmt.Println("Dialing", CometGrpcAddress)
 		}
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 500)
 	}
 	return err
 }
@@ -86,7 +87,7 @@ func startCometBFT(proxy_app string) (*exec.Cmd, error) {
 		_ = terminateCometBFT(cmd)
 		return nil, err
 	}
-	fmt.Printf("Started CometBFT. PID=%d, Logs=%s\n",
+	fmt.Printf("Started CometBFT. PID: %d, Logs: %s\n",
 		cmd.Process.Pid, logFile.Name())
 	return cmd, err
 }

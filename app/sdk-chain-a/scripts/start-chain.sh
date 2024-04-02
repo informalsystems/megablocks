@@ -62,6 +62,7 @@ ${APP_BIN} genesis add-genesis-account ${KEY_NODE} 10000000stake --keyring-backe
 ${APP_BIN} genesis gentx ${KEY_NODE} 1000000stake --chain-id ${CHAIN_ID} --home ${NODE_DIR} --keyring-backend test
 ${APP_BIN} genesis collect-gentxs --gentx-dir ${NODE_DIR}/config/gentx/ --home ${NODE_DIR}
 
+
 # Fix SDK issue generating initial height with wrong json data-type
 sed -i -e 's/"initial_height": 1/"initial_height": "1"/g' ${NODE_DIR}/config/genesis.json
 
@@ -77,7 +78,7 @@ GRPC_ADDRESS="${NODE_IP}:${NODE_GRPC_PORT}"
 LISTEN_ADDRESS="unix:///tmp/mind.sock"
 #LISTEN_ADDRESS="tcp://${NODE_IP}:${NODE_PORT}"
 P2P_ADDRESS="tcp://${NODE_IP}:${NODE_P2P_PORT}"
-LOG_LEVEL="trace" # switch to trace to see panic messages and rich and all debug msgs
+LOG_LEVEL="bank:trace,*:debug" # switch to trace to see panic messages and rich and all debug msgs
 #LOG_LEVEL="--log_level info"
 ENABLE_WEBGRPC="false"
 
