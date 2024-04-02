@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 
+	"cosmossdk.io/api/tendermint/abci"
 	abcicli "github.com/cometbft/cometbft/abci/client"
 	abcitypes "github.com/cometbft/cometbft/abci/types"
 	cfg "github.com/cometbft/cometbft/config"
@@ -105,11 +106,8 @@ func (hdl *AbciHandler) InitChain(ctx context.Context, chain *abcitypes.RequestI
 	req := *chain
 	req.ChainId = hdl.ChainID
 	req.AppStateBytes = hdl.InitAppStateBytes
-	fmt.Println("@@@@ appstatebytes is ", hdl.ChainID, ": ", string(hdl.InitAppStateBytes))
-	fmt.Println("@@@ real appstate is ", string(chain.AppStateBytes))
-	//TBD: Decide validator setup for multi-chain.
-	// In this spike it's not an app specific setting but a multiplexer
-	//req.Validators = []abcitypes.ValidatorUpdate{}
+	// TBD: Decide validator setup for multi-chain.
+	//      In this spike it's not an app specific setting but a multiplexer
 	return hdl.client.InitChain(ctx, &req)
 }
 
@@ -369,10 +367,77 @@ func (mux *CometMux) PrepareProposal(_ context.Context, proposal *abcitypes.Requ
 }
 
 // ProcessProposal allows applications to check if proposed block is valid
-func (mux *CometMux) ProcessProposal(_ context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
-	// TODO: to be decided if app should get the ability to check that and outcome of 'Atomic IBC'
-	mux.log.Debug("ProcessProposal called", "proposal", proposal)
+func (mux *CometMux) ProcessProposal(ctx context.Context, proposal *abcitypes.RequestProcessProposal) (*abcitypes.ResponseProcessProposal, error) {
+	mux.log.Debug("ProcessProposal called ", "#Txs", len(proposal.Txs), "proposal", proposal)
+
+	handlerTxs := map[ChainAppIdentifier]([][]byte){}
+
+	for idx := range proposal.Txs {
+		hdlr, err := mux.getHandler(proposal.Txs[idx])
+		if err != nil {
+			mux.log.Error("call to ProcessProposal failed", "error", err)
+			return nil, fmt.Errorf("no handler found for call")
+		}
+		// Add stripped transaction to handlers Tx set
+		handlerTxs[hdlr.ID] = append(handlerTxs[hdlr.ID], proposal.Txs[idx][MbHeaderLen:])
+	}
+
+	type ProposalResponse struct {
+		Response  *abcitypes.ResponseProcessProposal
+		HandlerID ChainAppIdentifier
+		Error     error
+	}
+
+	chanResp := make(chan ProposalResponse, len(mux.clients))
+	wg := sync.WaitGroup{}
+
+	for hdlrID, txs := range handlerTxs {
+		wg.Add(1)
+		hdlrID := hdlrID
+		txs := txs
+		newReq := *proposal
+		newReq.Txs = txs
+		chainID := mux.clients[hdlrID].ChainID
+		mux.log.Debug("Forwarding ProcessProposal", "#TXs", len(newReq.Txs), "hdlr-id", hdlrID, "chain-id", chainID)
+		go func() {
+			defer wg.Done()
+			appResp, err := mux.clients[hdlrID].client.ProcessProposal(ctx, &newReq)
+			chanResp <- ProposalResponse{
+				Response:  appResp,
+				HandlerID: hdlrID,
+				Error:     err}
+
+		}()
+	}
+
+	// wait until all routines are done
+	go func() {
+		wg.Wait()
+		close(chanResp)
+	}()
+
+	// loop until all response are received
 	response := abcitypes.ResponseProcessProposal{Status: abcitypes.ResponseProcessProposal_ACCEPT}
+
+	for resp := range chanResp {
+		chainID := mux.clients[resp.HandlerID].ChainID
+		mux.log.Debug("Response received on ProcessProposal", "chain-id", chainID, "response", resp.Response)
+
+		if resp.Error != nil {
+			mux.log.Error("call to ProcessProposal failed", "error",
+				resp.Error, "chain-id", chainID)
+			return nil, resp.Error
+		}
+		if response.Status == abcitypes.ResponseProcessProposal_ProposalStatus(abci.ResponseProcessProposal_UNKNOWN) {
+			response.Status = resp.Response.Status
+		}
+		if resp.Response.Status != abcitypes.ResponseProcessProposal_ACCEPT {
+			response.Status = resp.Response.Status
+		}
+
+	}
+	// TODO: to be decided if app should get the ability to check that and outcome of 'Atomic IBC'
+	mux.log.Debug("Overall Response on ProcessProposal", "response", response)
 	return &response, nil
 }
 
@@ -496,58 +561,6 @@ func (mux *CometMux) FinalizeBlock(ctx context.Context, req *abcitypes.RequestFi
 	return &response, nil
 }
 
-// Finalize Block: combination of BeginBlock, DeliverTx and EndBlock
-//
-// Note: FinalizeBlock only prepares the update to be made and does not change the state of the application.
-// The state change is actually committed in a later stage i.e. in commit phase.
-func (mux *CometMux) FinalizeBlockSerial(ctx context.Context, req *abcitypes.RequestFinalizeBlock) (*abcitypes.ResponseFinalizeBlock, error) {
-	mux.log.Debug("Finalize Block called", "#Txs", len(req.Txs), "req", req)
-
-	responseSlots := map[ChainAppIdentifier][]int{}
-	handlerTxs := map[ChainAppIdentifier]([][]byte){}
-
-	for _, hdlr := range mux.clients {
-		//hdlr.HandleFinalizeBlock(req, &txResults)
-		handlerTxs[hdlr.ID] = [][]byte{}
-	}
-
-	for idx := range req.Txs {
-		hdlr, err := mux.getHandler(req.Txs[idx])
-		if err != nil {
-			mux.log.Error("call to FinalizeBlock failed", "error", err)
-			return nil, fmt.Errorf("no handler found for call")
-		}
-		// Add stripped transaction to handlers Tx set
-		handlerTxs[hdlr.ID] = append(handlerTxs[hdlr.ID], req.Txs[idx][MbHeaderLen:])
-		responseSlots[hdlr.ID] = append(responseSlots[hdlr.ID], idx)
-	}
-
-	// Send transactions to dedicated application
-	appHashes := []byte{}
-	response := abcitypes.ResponseFinalizeBlock{
-		TxResults: make([]*abcitypes.ExecTxResult, len(req.Txs)),
-	}
-	for hdlrID, txs := range handlerTxs {
-		newReq := *req
-		newReq.Txs = txs
-		mux.log.Debug("Forwarding FinalizeBlock", "#TXs", len(txs), "hdlr-id", hdlrID)
-		appResp, err := mux.clients[hdlrID].client.FinalizeBlock(ctx, &newReq)
-		if err != nil {
-			mux.log.Error("call to FinalizeBlock failed", "error", err)
-			return nil, err
-		}
-		mux.log.Debug("FinalizeBlock App Response", "hdlr-id", hdlrID, "response", appResp)
-		slots := responseSlots[hdlrID]
-		for idx, resp := range appResp.TxResults {
-			response.TxResults[slots[idx]] = resp
-		}
-		appHashes = appResp.AppHash
-	}
-
-	response.AppHash = appHashes
-	return &response, nil
-}
-
 // Commit sends commit to all apps
 func (mux CometMux) Commit(ctx context.Context, commit *abcitypes.RequestCommit) (*abcitypes.ResponseCommit, error) {
 	mux.log.Debug("Commit called", "commit", commit)
@@ -571,36 +584,30 @@ func (mux CometMux) Commit(ctx context.Context, commit *abcitypes.RequestCommit)
 
 func (mux *CometMux) ListSnapshots(_ context.Context, snapshots *abcitypes.RequestListSnapshots) (*abcitypes.ResponseListSnapshots, error) {
 	mux.log.Debug("ListSnapshots called", "snapshot", snapshots)
-	mux.log.Error("@@@@ ListSnapshots called", "snapshot", snapshots)
 	return &abcitypes.ResponseListSnapshots{}, nil
 }
 
 func (mux *CometMux) OfferSnapshot(_ context.Context, snapshot *abcitypes.RequestOfferSnapshot) (*abcitypes.ResponseOfferSnapshot, error) {
 	mux.log.Debug("OfferSnapshots called", "snapshot", snapshot)
-	mux.log.Error("@@@@ OfferSnapshots called", "snapshot", snapshot)
 	return &abcitypes.ResponseOfferSnapshot{}, nil
 }
 
 func (mux *CometMux) LoadSnapshotChunk(_ context.Context, chunk *abcitypes.RequestLoadSnapshotChunk) (*abcitypes.ResponseLoadSnapshotChunk, error) {
 	mux.log.Debug("LoadSnapshots called", "chunk", chunk)
-	mux.log.Error("@@@@ LoadSnapshots called", "chunk", chunk)
 	return &abcitypes.ResponseLoadSnapshotChunk{}, nil
 }
 
 func (mux *CometMux) ApplySnapshotChunk(_ context.Context, chunk *abcitypes.RequestApplySnapshotChunk) (*abcitypes.ResponseApplySnapshotChunk, error) {
 	mux.log.Debug("ApplySnapshots called", "chunk", chunk)
-	mux.log.Error("@@@@ ApplySnapshots called", "chunk", chunk)
 	return &abcitypes.ResponseApplySnapshotChunk{Result: abcitypes.ResponseApplySnapshotChunk_ACCEPT}, nil
 }
 
 func (mux CometMux) ExtendVote(_ context.Context, extend *abcitypes.RequestExtendVote) (*abcitypes.ResponseExtendVote, error) {
 	mux.log.Debug("ExtendVote called", "request", extend)
-	mux.log.Error("@@@@ ExtendVote called", "request", extend)
 	return &abcitypes.ResponseExtendVote{}, nil
 }
 
 func (mux *CometMux) VerifyVoteExtension(_ context.Context, verify *abcitypes.RequestVerifyVoteExtension) (*abcitypes.ResponseVerifyVoteExtension, error) {
 	mux.log.Debug("VerifyVoteExtension called", "request", verify)
-	mux.log.Error("@@@ VerifyVoteExtension called", "request", verify)
 	return &abcitypes.ResponseVerifyVoteExtension{}, nil
 }
