@@ -23,4 +23,4 @@ For this spike implementation the needed changes on CometBFT and Cosmos-SDK side
 2) App-hash errors and other erroneous behavior of registered chain-apps needs special handling by the multiplexer which is not supported at the moment.
 3) Support of Validators in Megablocks environment needs to be defined and implemented
 4) Handling of consensus parameters across different chain apps need to be defined and implemented
-5) Current implementation was tested with 2 chain applications (sdk and non-sdk based) simultaneously. Other variations were not tested
+5) Current implementation was tested with 2 chain applications (sdk and non-sdk based) simultaneously

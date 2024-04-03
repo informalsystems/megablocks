@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: 'true'
+          submodules: true
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
@@ -45,3 +45,31 @@ jobs:
         if: env.GIT_DIFF
         run: |
           make test-e2e
+  test-ut:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+      - uses: technote-space/get-diff-action@v6.1.2
+        id: git_diff
+        with:
+          PATTERNS: |
+            **/*.go
+            go.mod
+            go.sum
+            **/go.mod
+            **/go.sum
+            **/Makefile
+            Makefile
+            Dockerfile*
+      - name: unit tests
+        if: env.GIT_DIFF
+        run: |
+          make test-ut

@@ -326,39 +326,6 @@ func (mux *CometMux) InitChain(ctx context.Context, chain *abcitypes.RequestInit
 	return response, err
 }
 
-// TODO: DELET ME
-func (mux *CometMux) InitChainSerial(ctx context.Context, chain *abcitypes.RequestInitChain) (*abcitypes.ResponseInitChain, error) {
-	mux.log.Debug("InitChain called", "chain-id", chain.ChainId, "request", chain)
-	var response *abcitypes.ResponseInitChain
-	var err error = nil
-	for _, client := range mux.clients {
-		//TODO: Use AppStateBytes from App-Genesis
-		chain.ChainId = client.ChainID
-		//resp, rc := client.client.InitChain(ctx, chain)
-		mux.log.Debug("Forwarding InitChain to", "handler", client.ChainID)
-
-		resp, rc := client.InitChain(ctx, chain)
-		if rc != nil {
-			mux.log.Error("error on InitChain from", "chain-id", client.ChainID, "error", err)
-			err = rc
-			continue
-		}
-		if response == nil {
-			response = resp
-		} else {
-			response.AppHash = append(response.AppHash, resp.AppHash...)
-		}
-
-		// TBD: consensus parameters should be the same across chain apps
-		if resp.ConsensusParams != nil {
-			response.ConsensusParams = resp.ConsensusParams
-		}
-		response.Validators = append(response.Validators, resp.Validators...)
-	}
-
-	return response, err
-}
-
 func (mux *CometMux) PrepareProposal(_ context.Context, proposal *abcitypes.RequestPrepareProposal) (*abcitypes.ResponsePrepareProposal, error) {
 	// TODO: to be decided if app should get the possibility to regroup this
 	response := abcitypes.ResponsePrepareProposal{Txs: proposal.Txs}

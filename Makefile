@@ -17,6 +17,10 @@ lint:
 	done
 .PHONY: lint
 
+.PHONY: test-ut
+test-ut:
+	go test ./cosmux
+
 test-e2e: build
 	go clean -testcache
 	go test -v ./tests/e2e/...
