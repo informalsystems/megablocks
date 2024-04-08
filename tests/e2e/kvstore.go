@@ -20,8 +20,8 @@ type KvApp struct {
 func createKVStore() *KvApp {
 
 	app := KvApp{
-		ChainID:     "kvStore",
-		Home:        filepath.Join(os.TempDir(), "kvHome"),
+		ChainID:     "KVStore",
+		Home:        "/tmp/kvstore", //TODO: move back to: filepath.Join(os.TempDir(), "kvHome"),
 		Binary:      "../../app/kvstore/kvstore",
 		Address:     "/tmp/kvapp.sock",
 		AddressType: "socket",
@@ -37,6 +37,18 @@ func (app *KvApp) GetAddress() string {
 	default:
 		panic(fmt.Sprintf("Unsupported address type %s", app.AddressType))
 	}
+}
+
+func (app *KvApp) GetChainID() string {
+	return app.ChainID
+}
+
+func (app *KvApp) GetHome() string {
+	return app.Home
+}
+
+func (app *KvApp) GetAddressType() string {
+	return app.AddressType
 }
 
 func (app *KvApp) Init() error {
@@ -71,7 +83,7 @@ func (app *KvApp) Start() error {
 		return fmt.Errorf("error starting kvStore application %v: %v", cmd, err)
 	}
 
-	fmt.Printf("Started KVStore. PID:%d, Logs=%s\n", cmd.Process.Pid, app.LogFile.Name())
+	fmt.Printf("Started KVStore. PID: %d, Logs: %s\n", cmd.Process.Pid, app.LogFile.Name())
 	return nil
 }
 

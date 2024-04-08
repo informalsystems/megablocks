@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -15,19 +14,21 @@ import (
 	"github.com/cometbft/cometbft/p2p"
 	"github.com/cometbft/cometbft/privval"
 	"github.com/cometbft/cometbft/proxy"
-	"github.com/spf13/viper"
 )
 
 var (
-	homeDir string
-	verbose bool
+	homeDir    string
+	verbose    bool
+	configFile string
+	logLevel   string
 )
 
 type MegaBlockApp struct {
-	ID             uint8 // app identifier used to route tx
-	Address        string
-	ConnectionType string
-	ChainID        string
+	//ID             uint8  // app identifier used to route tx
+	Address        string //`mapstructure:"address"`
+	ConnectionType string //`mapstructure:"connection_type"`
+	ChainID        string //`mapstructure:"chain_id"`
+	Home           string //`mapstructure:"home"`
 }
 
 // ChainApps is a list of applications handled by Multiplexer
@@ -35,7 +36,7 @@ type MegaBlockApp struct {
 var ChainApps []MegaBlockApp = []MegaBlockApp{
 	// KV-Store-Chain
 	{
-		ID:             1,
+		//ID:             1,
 		Address:        "unix:///tmp/kvapp.sock",
 		ConnectionType: "socket",
 		ChainID:        "KVStore",
@@ -43,7 +44,7 @@ var ChainApps []MegaBlockApp = []MegaBlockApp{
 
 	// SDK-App-1
 	{
-		ID: 2,
+		//ID: 2,
 		//Address:        "127.0.0.1:26658",
 		Address:        "unix:///tmp/mind.sock",
 		ConnectionType: "socket",
@@ -54,25 +55,8 @@ var ChainApps []MegaBlockApp = []MegaBlockApp{
 func init() {
 	flag.StringVar(&homeDir, "cmt-home", "", "Path to the CometBFT config directory (if empty, uses $HOME/.cometbft)")
 	flag.BoolVar(&verbose, "v", false, "verbose")
-}
-
-// configureCometBFT creates default config in specified cometBFT home directory
-func configureCometBFT(homeDir string) *cfg.Config {
-	config := cfg.DefaultConfig()
-	config.SetRoot(homeDir)
-	viper.SetConfigFile(fmt.Sprintf("%s/%s", homeDir, "config/config.toml"))
-
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Reading config: %v", err)
-	}
-	if err := viper.Unmarshal(config); err != nil {
-		log.Fatalf("Decoding config: %v", err)
-	}
-	if err := config.ValidateBasic(); err != nil {
-		log.Fatalf("Invalid configuration data: %v", err)
-	}
-
-	return config
+	flag.StringVar(&logLevel, "log_level", "comet-mux:debug", "Log level")
+	flag.StringVar(&configFile, "c", "", "multiplexer config file")
 }
 
 func main() {
@@ -81,55 +65,52 @@ func main() {
 	if homeDir == "" {
 		homeDir = os.ExpandEnv("$HOME/.cosmux")
 	}
-	config := configureCometBFT(homeDir)
+
+	cometCfg := ConfigureCometBFT(homeDir)
+	muxCfg := ConfigureCometMultiplexer(configFile)
 
 	// override loglevel config if requested
 	if verbose {
-		config.LogLevel = "debug" //"*:error,p2p:info,state:info"
+		cometCfg.LogLevel = "debug" //"*:error,p2p:info,state:info"
+		muxCfg.LogLevel = "debug"
+	} else {
+		cometCfg.LogLevel = logLevel
+		muxCfg.LogLevel = "debug"
 	}
 
 	// Create Multiplexer Shim
-	muxCfg := CosmuxConfig{LogLevel: config.LogLevel}
 	cosmux := NewMultiplexer(muxCfg)
-
-	// Register applications
-	for _, app := range ChainApps {
-		if err := cosmux.AddApplication(app); err != nil {
-			log.Fatalf("error registering chain application: %v", err)
-		}
-	}
-
 	if err := cosmux.Start(); err != nil {
 		log.Fatalf("error starting cosmux; %v", err)
 	}
 
 	// use private validator to sign consensus messages
 	pv := privval.LoadFilePV(
-		config.PrivValidatorKeyFile(),
-		config.PrivValidatorStateFile(),
+		cometCfg.PrivValidatorKeyFile(),
+		cometCfg.PrivValidatorStateFile(),
 	)
 
 	// nodeKey is needed to identify the node in a p2p network
-	nodeKey, err := p2p.LoadNodeKey(config.NodeKeyFile())
+	nodeKey, err := p2p.LoadNodeKey(cometCfg.NodeKeyFile())
 	if err != nil {
 		log.Fatalf("failed to load node's key: %v", err)
 	}
 
 	logger := cmtlog.NewTMLogger(cmtlog.NewSyncWriter(os.Stdout))
-	logger, err = cmtflags.ParseLogLevel(config.LogLevel, logger, cfg.DefaultLogLevel)
+	logger, err = cmtflags.ParseLogLevel(cometCfg.LogLevel, logger, cfg.DefaultLogLevel)
 	if err != nil {
 		log.Fatalf("failed to parse log level: %v", err)
 	}
 
 	clientCreator := proxy.NewConnSyncLocalClientCreator(cosmux)
 	node, err := node.NewNode(
-		config,
+		cometCfg,
 		pv,
 		nodeKey,
 		clientCreator,
-		node.DefaultGenesisDocProviderFunc(config),
+		node.DefaultGenesisDocProviderFunc(cometCfg),
 		cfg.DefaultDBProvider,
-		node.DefaultMetricsProvider(config.Instrumentation),
+		node.DefaultMetricsProvider(cometCfg.Instrumentation),
 		logger,
 	)
 	if err != nil {

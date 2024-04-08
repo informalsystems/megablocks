@@ -2,16 +2,35 @@ package e2e
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/cometbft/cometbft/rpc/client/http"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	comettypes "github.com/cometbft/cometbft/types"
 )
+
+var (
+	BlockTime time.Duration = time.Second * 3
+)
+
+// createMegablocksHeader creates the header needed for all transactions of megablocks
+// applications.
+func CreateMegablocksHeader(chainID string) []byte {
+	// The Megablocks header is based on a 4-bytes Magic + 4-bytes truncated sha1 of the chain ID
+	// of the application.
+	tx := comettypes.Tx{0x23, 0x6d, 0x75, 0x78} // Megablocks MAGIC
+
+	// create
+	checksum := sha1.Sum([]byte(chainID))
+	megablocks_id := checksum[:4]
+	return append(tx, megablocks_id...)
+}
 
 func Client(ip, proxyPort string) (*rpchttp.HTTP, error) {
 	return rpchttp.New(fmt.Sprintf("http://%s:%v", ip, proxyPort), "/websocket")
@@ -37,7 +56,7 @@ func SendTx(client *http.HTTP, tx comettypes.Tx) error {
 	if _, err := client.BroadcastTxSync(ctx, tx); err != nil {
 		return fmt.Errorf("error sending Tx to %v: %s", client, err.Error())
 	}
-	fmt.Println("Sent transaction")
+	fmt.Println("Sent transaction", tx)
 	return nil
 }
 
